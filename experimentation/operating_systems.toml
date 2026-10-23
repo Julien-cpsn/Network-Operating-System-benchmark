@@ -331,15 +331,15 @@ EOF""",
 [MikroTik]
     input_ready = "[admin@MikroTik] >"
     login = "admin"
-    password = "test"
+    password = ""
     network_stack = "MikroTik network stack"
     routing_stack = "MikroTik routing stack"
     interface_prefix = "ether"
     interfaces_start_at =  1
-    images_path = ["/home/julien/Programmation/vm/MikroTik/chr-6.49.18.img"]
+    images_path = ["/home/julien/Programmation/vm/MikroTik/chr-6.49.23.qcow2"]
     resources_monitor_commands = [
         """{\r\n
-    :put ("Total (MiB)    Free (MiB)    Used (MiB)    CPU (perc)")\r\n
+    :put ("Total (MiB)    Available (MiB)    Used (MiB)    CPU (perc)")\r\n
     :while (true) do={\r\n
         :local total [/system resource get total-memory]\r\n
         :local free [/system resource get free-memory]\r\n
