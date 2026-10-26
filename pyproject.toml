@@ -1,7 +1,7 @@
 [project]
-name = "nos-qemu-benchmark"
+name = "nos-benchmark"
 version = "0.1.0"
-description = "Network Operating System QEMU benchmark"
+description = "Network Operating System benchmark"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
