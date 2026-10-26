@@ -143,8 +143,10 @@ def main(output_path: str, inputs: list[str]):
     # ------------------------------------------------------------------
 
     ax1.set_xlabel("Time (seconds since experiment start)")
-    ax1.set_ylabel("— Used Memory (MiB)")
-    ax2.set_ylabel("···  CPU load (%)")
+    ax1.set_ylabel("— Used Memory (MiB, guest-measured)")
+    # Since the host monitor, cpu_pct is the guest execution time measured on the host,
+    # in % of the router's vCPUs (column "cpu_source" of the summaries)
+    ax2.set_ylabel("···  CPU load (% of vCPUs, host-measured)")
 
     ax1.set_ylim(bottom=0)
     ax2.set_ylim(0, 100)

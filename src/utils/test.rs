@@ -13,7 +13,7 @@ pub async fn test_task(
     experiment_run_path: PathBuf,
     from_node_name: String,
     console_host: String,
-    console: i64,
+    console: u16,
     test_commands: Vec<OsCommand>,
 ) -> anyhow::Result<()> {
     execute_commands(

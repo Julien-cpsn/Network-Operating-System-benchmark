@@ -33,6 +33,8 @@ pub enum Command {
     #[clap(subcommand)]
     /// Upload experiments to Grid'5000 and reserve a node to run them
     G5k(G5kCommands),
+    /// Prints commands and args tree
+    Tree,
 }
 
 

@@ -11,7 +11,7 @@ pub async fn monitor_task(
     experiment_run_path: PathBuf,
     router_name: String,
     console_host: String,
-    console: i64,
+    console: u16,
     input_ready: String,
     mut monitor_command: Vec<OsCommand>,
     stop_monitoring: Arc<AtomicBool>

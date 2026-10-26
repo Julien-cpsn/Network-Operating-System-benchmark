@@ -2,10 +2,10 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::exit;
 use std::sync::Arc;
+use std::thread;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use anyhow::anyhow;
-use gns3fy_rs::Gns3Connector;
 use indexmap::IndexMap;
 use tracing::{debug, error, info, warn};
 use tokio::task::JoinSet;
@@ -13,7 +13,7 @@ use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::util::SubscriberInitExt;
 use crate::args::run::RunCommand;
-use crate::{GNS3_SERVER_PASSWORD, GNS3_SERVER_URL, GNS3_SERVER_USERNAME, GUEST_IMAGE_PATH};
+use crate::GUEST_IMAGE_PATH;
 use crate::models::experiment::Experiment;
 use crate::models::failure_event::FailureEvent;
 use crate::models::network_stack::NetworkStack;
@@ -22,19 +22,20 @@ use crate::models::operating_system::OperatingSystem;
 use crate::models::os_command::{CommandContext, OsCommand};
 use crate::models::routes::route_config::RouteConfig;
 use crate::models::routing_stack::RoutingStack;
-use crate::utils::env::harvest_env_variables;
+use crate::utils::env::{harvest_env_variables, work_dir};
 use crate::utils::files::experiments::parse_experiments_files;
 use crate::utils::files::network_stacks::parse_network_stack_list_file;
 use crate::utils::files::oses::parse_os_list_file;
 use crate::utils::files::results_dir::RESULT_DIR_PATH;
 use crate::utils::files::routing_stacks::parse_routing_stack_list_file;
 use crate::utils::files::shared_dir::SHARED_DIR_PATH;
-use crate::utils::gns3::config::get_gns3_images_path;
-use crate::utils::gns3::image::find_or_upload_images;
-use crate::utils::gns3::node::create_node;
-use crate::utils::gns3::project::{create_project, find_and_delete_projects};
-use crate::utils::gns3::template::{find_and_delete_templates, generate_and_create_guest_template, generate_and_create_router_template};
 use crate::utils::link::{create_link, link_failure};
+use crate::utils::qemu::host_monitor::{host_monitor_task, MonitoredVm};
+use crate::utils::qemu::image::resolve_images;
+use crate::utils::qemu::ports::reset_port_allocator;
+use crate::utils::qemu::network::{delete_all_taps, link_backend};
+use crate::utils::qemu::process::{stop_all_vms, stop_and_delete_all_vms};
+use crate::utils::qemu::vm::{sanitize_name, QemuVm};
 use crate::utils::log::{find_and_delete_log_files, setup_experiment_logger, EXPERIMENT_LOG_FILE_NAME, find_and_delete_experiment_log_file};
 use crate::utils::monitor::monitor_task;
 use crate::utils::os_commands::execute::{execute_commands_from_node};
@@ -72,31 +73,33 @@ pub async fn run(run_command: RunCommand) -> anyhow::Result<()> {
         exit(0);
     }
 
-    let gns3 = Arc::new(
-        Gns3Connector::builder(GNS3_SERVER_URL.get().unwrap())
-            .user(GNS3_SERVER_USERNAME.get().unwrap())
-            .cred(GNS3_SERVER_PASSWORD.get().unwrap())
-            .build()?
-    );
-
-    let images_path = get_gns3_images_path()?;
     let network_stack_list = parse_network_stack_list_file()?;
     let routing_stack_list = parse_routing_stack_list_file()?;
     let os_list = parse_os_list_file(network_stack_list.keys().collect(), routing_stack_list.keys().collect())?;
 
-    find_or_upload_images(&gns3, &images_path, &vec![GUEST_IMAGE_PATH.get().unwrap().clone()]).await?;
+    let guest_image = resolve_images(&[GUEST_IMAGE_PATH.get().unwrap().clone()])?.remove(0);
 
     let cancellation_token = CancellationToken::new();
     let token = cancellation_token.clone();
 
     ctrlc::set_handler(move || {
-        cancellation_token.cancel()
+        cancellation_token.cancel();
+
+        // Console interactions are blocking, so the experiment may not notice the cancellation:
+        // in that case, stop the VMs from here and exit
+        thread::spawn(|| {
+            thread::sleep(Duration::from_secs(3));
+            warn!(target: "run", "Experiment did not stop by itself, stopping VMs");
+            let _ = stop_all_vms(&work_dir());
+            let _ = delete_all_taps();
+            exit(130);
+        });
     }).expect("Error setting Ctrl-C handler");
 
     let nb_experiments = experiments.len();
     let nb_runs = run_command.run_command.runs;
 
-    'experiment_loop: for (experiment_index, mut experiment) in experiments.drain(..).enumerate() {
+    'experiment_loop: for (experiment_index, experiment) in experiments.drain(..).enumerate() {
         let experiment_path = RESULT_DIR_PATH.join(&experiment.experiment_name);
         if experiment_path.exists() {
            fs::remove_dir_all(&experiment_path)?;
@@ -119,11 +122,10 @@ pub async fn run(run_command: RunCommand) -> anyhow::Result<()> {
                     run_index,
                     nb_runs,
                     &run_command,
-                    &gns3,
                     &os_list,
                     &network_stack_list,
                     &routing_stack_list,
-                    &images_path,
+                    &guest_image,
                     experiment.clone(),
                     &experiment_run_path
                 ) => {
@@ -134,17 +136,19 @@ pub async fn run(run_command: RunCommand) -> anyhow::Result<()> {
                 },
                  _ = token.cancelled() => {
                     info!(target: TARGET, "Stopping experiment");
-                    for (node_name, node) in experiment.network.nodes.iter_mut() {
-                        let gns3_node = node.gns3_node.as_mut().unwrap();
-                        gns3_node.stop().await?;
-                        info!(target: TARGET, "Stopping node {node_name}");
-                    }
+                    stop_all_vms(&work_dir())?;
+                    delete_all_taps()?;
                     break 'experiment_loop;
                 }
             }
 
             sleep(Duration::from_secs(INTER_XP_WAIT)).await;
         }
+    }
+
+    // The taps of the last experiment (their VMs must be stopped first)
+    if !run_command.run_command.no_stop {
+        delete_all_taps()?;
     }
 
     info!(target: TARGET, "Finished");
@@ -158,11 +162,10 @@ pub async fn run_experiment(
     run_index: u8,
     nb_runs: u8,
     run_command: &RunCommand,
-    gns3: &Arc<Gns3Connector>,
     oses: &IndexMap<String, OperatingSystem>,
     network_stacks: &IndexMap<String, NetworkStack>,
     routing_stacks: &IndexMap<String, RoutingStack>,
-    images_path: &PathBuf,
+    guest_image: &PathBuf,
     mut experiment: Experiment,
     experiment_run_path: &PathBuf
 ) -> anyhow::Result<()> {
@@ -174,51 +177,51 @@ pub async fn run_experiment(
 
     let experiment_start = Instant::now();
 
-    find_and_delete_projects(gns3.clone()).await?;
-    find_and_delete_templates(gns3.clone()).await?;
+    info!(target: TARGET, "Link backend: {}", link_backend());
+
+    // Stops the VMs left by a previous experiment and deletes their disks
+    let work_dir = work_dir();
+    stop_and_delete_all_vms(&work_dir)?;
+    reset_port_allocator();
     find_and_delete_log_files(&experiment_run_path, &experiment.network.nodes)?;
 
-    for (guest_name, node) in filter_guests(&experiment.network.nodes) {
-        generate_and_create_guest_template(gns3.clone(), &guest_name, &node).await?;
-    }
+    let mut router_images = IndexMap::new();
 
-    for (router_name, node) in filter_routers(&mut experiment.network.nodes) {
+    for (router_name, node) in filter_routers(&experiment.network.nodes) {
         let router = node.unwrap_router();
-        debug!(target: TARGET, "Ensuring \"{}\" operating system image ({}) is uploaded", router_name, router.os_name);
+        debug!(target: TARGET, "Ensuring \"{}\" operating system image ({}) exists", router_name, router.os_name);
 
         let operating_system = oses.get(&router.os_name).ok_or_else(|| anyhow!("No operating system found for {}", router.os_name))?;
-        find_or_upload_images(&gns3, images_path, &operating_system.images_path).await?;
+        router_images.insert(router_name.clone(), resolve_images(&operating_system.images_path)?);
     }
 
     /* SETUP */
 
-    let project = create_project(gns3.clone(), &experiment.experiment_name).await?;
-    let project_id = project.project_id.expect("Project has no ID");
+    let experiment_dir = work_dir.join(sanitize_name(&experiment.experiment_name));
+    fs::create_dir_all(&experiment_dir)?;
 
-    for (router_name, node) in filter_routers_mut(&mut experiment.network.nodes) {
-        let router = node.unwrap_router();
-        let os = oses.get(&router.os_name).ok_or_else(|| anyhow!("No operating system {} found for {}", router.os_name, router_name))?;
+    for (node_index, (node_name, node)) in experiment.network.nodes.iter_mut().enumerate() {
+        let vm = match &node.node_type {
+            NodeType::Router(_) => QemuVm::new_router(&experiment_dir, node_index, node_name, node, &router_images[node_name]).await?,
+            NodeType::Guest(_) => QemuVm::new_guest(&experiment_dir, node_index, node_name, node, guest_image).await?,
+        };
 
-        generate_and_create_router_template(gns3.clone(), &router_name, &node, &os.images_path).await?;
-
-        let gns3_node = create_node(gns3.clone(), &project_id, router_name, node.x, node.y).await?;
-        node.gns3_node = Some(gns3_node);
-    }
-
-    for (guest_name, node) in filter_guests_mut(&mut experiment.network.nodes) {
-        let gns3_node = create_node(gns3.clone(), &project_id, guest_name, node.x, node.y).await?;
-        node.gns3_node = Some(gns3_node);
+        node.vm = Some(vm);
     }
 
     let mut links = Vec::new();
 
     for (index, link) in experiment.network.physical_links.iter().enumerate() {
-        let (node_a_name, node_a) = experiment.network.nodes.get_key_value(&link.node_a).ok_or_else(|| anyhow!("Node a \"{}\" not found in link {}", &link.node_a, index))?;
-        let (node_b_name, node_b) = experiment.network.nodes.get_key_value(&link.node_b).ok_or_else(|| anyhow!("Node b \"{}\" not found in link {}", &link.node_b, index))?;
+        if !experiment.network.nodes.contains_key(&link.node_a) {
+            return Err(anyhow!("Node a \"{}\" not found in link {}", &link.node_a, index));
+        }
+        if !experiment.network.nodes.contains_key(&link.node_b) {
+            return Err(anyhow!("Node b \"{}\" not found in link {}", &link.node_b, index));
+        }
 
-        let gns3_link = create_link(gns3.clone(), &project_id, node_a_name, node_b_name, node_a, node_b, link.adapter_a, link.adapter_b).await?;
+        let qemu_link = create_link(&mut experiment.network.nodes, link, index)?;
 
-        links.push((link, gns3_link));
+        links.push((link.clone(), qemu_link));
     }
 
     for test in &experiment.test_batch {
@@ -240,9 +243,9 @@ pub async fn run_experiment(
 
     for (guest_name, node) in filter_guests_mut(&mut experiment.network.nodes) {
         info!(target: TARGET, "Starting guest: {}", guest_name);
-        let gns3_node = node.gns3_node.as_mut().ok_or_else(|| anyhow!("No GNS3 node was attached to the guest"))?;
-        gns3_node.start().await?;
-        info!(target: TARGET, "Telnet console: telnet {} {}", gns3_node.console_host.as_ref().unwrap(), gns3_node.console.unwrap());
+        let vm = node.vm.as_mut().ok_or_else(|| anyhow!("No VM was attached to the guest"))?;
+        vm.start().await?;
+        info!(target: TARGET, "Telnet console: telnet {} {}", vm.console_host, vm.console_port);
     }
 
     /* CONFIG */
@@ -262,7 +265,7 @@ pub async fn run_experiment(
         execute_commands_from_node(
             &experiment_run_path,
             &guest_name,
-            node.gns3_node.as_ref().unwrap(),
+            node.vm.as_ref().unwrap(),
             config_commands,
             Some(4_000),
             None
@@ -285,15 +288,15 @@ pub async fn run_experiment(
 
         let login_commands = router_login_commands(&command_context)?;
 
-        let gns3_node = node.gns3_node.as_mut().ok_or_else(|| anyhow!("No GNS3 node was attached to the guest"))?;
-        gns3_node.start().await?;
+        let vm = node.vm.as_mut().ok_or_else(|| anyhow!("No VM was attached to the router"))?;
+        vm.start().await?;
 
-        info!(target: TARGET, "Telnet console: telnet {} {}", gns3_node.console_host.as_ref().unwrap(), gns3_node.console.unwrap());
+        info!(target: TARGET, "Telnet console: telnet {} {}", vm.console_host, vm.console_port);
 
         execute_commands_from_node(
             &experiment_run_path,
             &router_name,
-            &gns3_node,
+            &vm,
             login_commands,
             Some(180_000),
             None
@@ -301,7 +304,7 @@ pub async fn run_experiment(
     }
 
     for (router_name, node) in filter_routers(&experiment.network.nodes) {
-        let gns3_node = node.gns3_node.as_ref().ok_or_else(|| anyhow!("No GNS3 node was attached to the guest"))?;
+        let vm = node.vm.as_ref().ok_or_else(|| anyhow!("No VM was attached to the router"))?;
         let router = node.unwrap_router();
         let os = oses.get(&router.os_name).ok_or_else(|| anyhow!("No operating system {} found for {}", router.os_name, router_name))?;
         let network_stack = network_stacks.get(&os.network_stack).ok_or_else(|| anyhow!("No network stack found for {}", os.network_stack))?;
@@ -400,7 +403,7 @@ pub async fn run_experiment(
         execute_commands_from_node(
             &experiment_run_path,
             &router_name,
-            &gns3_node,
+            &vm,
             commands,
             Some(4_000),
             None
@@ -411,6 +414,17 @@ pub async fn run_experiment(
 
     let stop_monitoring = Arc::new(AtomicBool::new(false));
     let mut monitor_threads = JoinSet::new();
+
+    // Host side: every VM (routers, but also clients and servers, to locate bottlenecks)
+    let monitored_vms: Vec<MonitoredVm> = filter_routers(&experiment.network.nodes)
+        .values()
+        .filter_map(|node| node.vm.as_ref().and_then(MonitoredVm::from_vm))
+        .collect();
+
+    let host_monitor = {
+        let (run_path, stop) = (experiment_run_path.clone(), stop_monitoring.clone());
+        tokio::task::spawn_blocking(move || host_monitor_task(run_path, monitored_vms, stop))
+    };
 
     for (router_name, node) in filter_routers(&experiment.network.nodes) {
         let router  = node.unwrap_router();
@@ -425,7 +439,7 @@ pub async fn run_experiment(
         };
 
         if let Some(monitor) = &os.resources_monitor_commands {
-            let gns3_node = node.gns3_node.as_ref().unwrap();
+            let vm = node.vm.as_ref().unwrap();
 
             let monitor_commands = monitor
                 .iter()
@@ -435,8 +449,8 @@ pub async fn run_experiment(
             monitor_threads.spawn(monitor_task(
                 experiment_run_path.clone(),
                 router_name.clone(),
-                gns3_node.console_host.as_ref().unwrap().to_string(),
-                gns3_node.console.unwrap(),
+                vm.console_host.clone(),
+                vm.console_port,
                 os.input_ready.clone(),
                 monitor_commands,
                 stop_monitoring.clone()
@@ -457,9 +471,9 @@ pub async fn run_experiment(
     for failure_event in &experiment.network.failure_events {
         match failure_event {
             FailureEvent::Link { link_index, happens_at } => {
-                let (link, gns3_link) = links.remove(*link_index);
+                let (link, qemu_link) = links.get(*link_index).cloned().ok_or_else(|| anyhow!("Link {} not found for failure event", link_index))?;
 
-                failure_events_threads.spawn(link_failure(link.clone(), gns3_link, *happens_at));
+                failure_events_threads.spawn(link_failure(link, qemu_link, *happens_at));
             }
         }
     }
@@ -473,7 +487,7 @@ pub async fn run_experiment(
 
         for (from, tests) in experiment.test_batch_by_node() {
             let (from_node_name, from_node) = experiment.network.nodes.get_key_value(&from).unwrap();
-            let from_gns3_node = from_node.gns3_node.as_ref().unwrap();
+            let from_vm = from_node.vm.as_ref().unwrap();
 
             let mut test_batch_commands = guest_test_batch_start_commands();
             
@@ -492,8 +506,8 @@ pub async fn run_experiment(
             test_threads.spawn(test_task(
                 experiment_run_path.clone(),
                 from_node_name.to_owned(),
-                from_gns3_node.console_host.as_ref().unwrap().to_string(),
-                from_gns3_node.console.unwrap().clone(),
+                from_vm.console_host.clone(),
+                from_vm.console_port,
                 test_batch_commands
             ));
         }
@@ -510,8 +524,16 @@ pub async fn run_experiment(
     stop_monitoring.store(true, Ordering::Relaxed);
     monitor_threads.join_all().await;
 
-    for test in &experiment.test_batch {
-        harvest_results(&experiment_run_path, &test)?;
+    match host_monitor.await {
+        Ok(Ok(())) => {},
+        Ok(Err(error)) => error!(target: TARGET, "Host monitoring failed: {:?}", error),
+        Err(error) => error!(target: TARGET, "Host monitoring task failed: {}", error),
+    }
+
+    if !run_command.run_command.no_test {
+        for test in &experiment.test_batch {
+            harvest_results(&experiment_run_path, &test)?;
+        }
     }
 
     /* STOP */
@@ -520,8 +542,10 @@ pub async fn run_experiment(
     
     if !run_command.run_command.no_stop {
         for (node_name, node) in experiment.network.nodes.iter_mut() {
-            debug!(target: TARGET, "Stoping node: {}", node_name);
-            node.gns3_node.as_mut().unwrap().stop().await?;
+            debug!(target: TARGET, "Stopping node: {}", node_name);
+            if let Some(vm) = node.vm.as_mut() {
+                vm.stop().await?;
+            }
         }
     }
 

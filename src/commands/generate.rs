@@ -271,7 +271,7 @@ pub fn generate(generate_command: GenerateCommand) -> anyhow::Result<()> {
                                         x: generic_node.x,
                                         y: generic_node.y,
                                         node_type,
-                                        gns3_node: None,
+                                        vm: None,
                                         distant_networks: vec![],
                                     };
 

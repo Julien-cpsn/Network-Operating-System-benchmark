@@ -1,7 +1,7 @@
 [project]
-name = "nos-gns3-benchmark"
+name = "nos-qemu-benchmark"
 version = "0.1.0"
-description = "Network Operating System GNS3 benchmark"
+description = "Network Operating System QEMU benchmark"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [

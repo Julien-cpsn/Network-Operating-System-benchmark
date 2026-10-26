@@ -27,7 +27,7 @@ pub struct RunCommandArgs {
     #[arg(long)]
     pub first_only: bool,
 
-    /// Do not stop GNS3 nodes after the end of the experiment
+    /// Do not stop the QEMU VMs after the end of the experiment
     #[arg(long)]
     pub no_stop: bool,
     

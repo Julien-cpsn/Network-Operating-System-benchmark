@@ -1,4 +1,4 @@
-pub mod gns3;
+pub mod qemu;
 pub mod env;
 pub mod files;
 pub mod route;

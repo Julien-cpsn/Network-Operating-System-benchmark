@@ -124,7 +124,7 @@ fn prepare_site_machine(user: &str, site: &str, experiment_name: &String, experi
     info!(target: TARGET, "All images uploaded");
 
     info!(target: TARGET, "Uploading the commands to Grid'5000");
-    scp_upload(&session, &experiment_commands, &format!("{site}/survey/Network-Operating-System-GNS3-benchmark/run_experiment.sh"), 0o774)?;
+    scp_upload(&session, &experiment_commands, &format!("{site}/survey/Network-Operating-System-benchmark/run_experiment.sh"), 0o774)?;
     info!(target: TARGET, "Commands uploaded as \"run_experiment.sh\"");
 
     info!(target: TARGET, "Uploading run_benchmark_g5k.sh to Grid'5000");

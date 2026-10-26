@@ -1665,7 +1665,7 @@ wheels = [
 ]
 
 [[package]]
-name = "nos-gns3-benchmark"
+name = "nos-qemu-benchmark"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

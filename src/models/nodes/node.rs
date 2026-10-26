@@ -3,6 +3,7 @@ use crate::models::nodes::router::{GenericRouter, Router};
 use cidr::Ipv4Cidr;
 use serde::{Deserialize, Serialize};
 use std::net::Ipv4Addr;
+use crate::utils::qemu::vm::QemuVm;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Node {
@@ -18,7 +19,7 @@ pub struct Node {
     pub node_type: NodeType,
 
     #[serde(skip)]
-    pub gns3_node: Option<gns3fy_rs::Node>,
+    pub vm: Option<QemuVm>,
 
     #[serde(skip)]
     pub distant_networks: Vec<DistantNetwork>
