@@ -13,6 +13,7 @@ use tracing_subscriber::fmt::Layer;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::Registry;
 use crate::models::nodes::node::Node;
+use crate::utils::files::dir::subtract_project_root;
 
 const TARGET: &str = "log";
 
@@ -81,7 +82,7 @@ pub fn find_and_delete_experiment_log_file(experiment_path: &PathBuf) -> anyhow:
     let experiment_log_path = experiment_path.join(format!("{EXPERIMENT_LOG_FILE_NAME}.log"));
 
     if experiment_log_path.exists() {
-        debug!(target: TARGET, "Deleting existing experiment log file: {}", experiment_log_path.display());
+        debug!(target: TARGET, "Deleting existing experiment log file: {}", subtract_project_root(&experiment_log_path));
         fs::remove_file(&experiment_log_path)?;
     }
 

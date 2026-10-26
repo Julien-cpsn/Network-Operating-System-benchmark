@@ -8,3 +8,8 @@ pub fn create_dir_if_does_not_exist(path: PathBuf) -> anyhow::Result<PathBuf> {
 
     Ok(path)
 }
+
+pub fn subtract_project_root(path: &PathBuf) -> String {
+    let current_dir = format!("{}/", env!("CARGO_MANIFEST_DIR"));
+    path.to_string_lossy().replace(&current_dir, "")
+}

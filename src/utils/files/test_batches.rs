@@ -5,6 +5,7 @@ use indexmap::IndexMap;
 use tracing::{debug, error};
 use once_cell::sync::Lazy;
 use crate::models::test::Test;
+use crate::utils::files::dir::subtract_project_root;
 
 const TARGET: &str = "files";
 
@@ -13,7 +14,7 @@ pub static TEST_BATCH_LIST_PATH: Lazy<PathBuf> = Lazy::new(|| env::current_dir()
 
 pub fn parse_test_batch_list_file() -> anyhow::Result<IndexMap<String, Vec<Test>>> {
     if !TEST_BATCH_LIST_PATH.exists() {
-        error!(target: TARGET, "Could not find file \"{}\"", TEST_BATCH_LIST_PATH.display());
+        error!(target: TARGET, "Could not find file \"{}\"", subtract_project_root(&TEST_BATCH_LIST_PATH));
         exit(1);
     }
 

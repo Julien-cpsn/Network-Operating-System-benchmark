@@ -7,6 +7,7 @@ use tracing::{error, info};
 use walkdir::WalkDir;
 use crate::args::args::ExperimentSelectionArgs;
 use crate::models::experiment::Experiment;
+use crate::utils::files::dir::subtract_project_root;
 
 const TARGET: &str = "files";
 
@@ -14,7 +15,11 @@ pub static EXPERIMENTS_PATH: Lazy<PathBuf> = Lazy::new(|| env::current_dir().unw
 
 pub fn parse_experiments_files(experiment_selection: &ExperimentSelectionArgs) -> anyhow::Result<Vec<Experiment>> {
     if !EXPERIMENTS_PATH.exists() {
-        error!(target: TARGET, "Could not find experiment dir \"{}\", make sure you have created or generated experiments first by using the `generate` command", EXPERIMENTS_PATH.display());
+        error!(
+            target: TARGET,
+            "Could not find experiment dir \"{}\", make sure you have created or generated experiments first by using the `generate` command",
+            subtract_project_root(&EXPERIMENTS_PATH)
+        );
         exit(1);
     }
 

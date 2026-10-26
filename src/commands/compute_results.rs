@@ -16,6 +16,7 @@ pub fn compute_results(compute_results_command: ComputeResultsCommand) -> anyhow
     let experiment_results = extract_experiments_and_results(&compute_results_command.experiment_selection, false)?;
 
     for experiment in experiment_results {
+        info!(target: TARGET, "================================================================================");
         info!(target: TARGET, "{}", &experiment.experiment.experiment_name);
 
         add_flent_stats(&experiment)?;

@@ -5,6 +5,7 @@ use indexmap::IndexMap;
 use tracing::{debug, error};
 use once_cell::sync::Lazy;
 use crate::models::routing_stack::RoutingStack;
+use crate::utils::files::dir::subtract_project_root;
 
 const TARGET: &str = "files";
 
@@ -13,7 +14,7 @@ pub static ROUTING_STACK_LIST_PATH: Lazy<PathBuf> = Lazy::new(|| env::current_di
 
 pub fn parse_routing_stack_list_file() -> anyhow::Result<IndexMap<String, RoutingStack>> {
     if !ROUTING_STACK_LIST_PATH.exists() {
-        error!(target: TARGET, "Could not find file \"{}\"", ROUTING_STACK_LIST_PATH.display());
+        error!(target: TARGET, "Could not find file \"{}\"", subtract_project_root(&ROUTING_STACK_LIST_PATH));
         exit(1);
     }
 

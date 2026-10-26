@@ -44,6 +44,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Context;
 use chrono::DateTime;
 use tracing::{info, warn};
+use crate::utils::files::dir::subtract_project_root;
 use crate::utils::qemu::host_monitor::{COL_GUEST_PCT, COL_RSS_ANON_MIB, COL_TIMESTAMP, HOST_RESOURCES_DIR_NAME};
 use crate::utils::results::flent::summary::SUMMARY_FOLDER_NAME;
 use crate::utils::results::utils::natural_key;
@@ -197,17 +198,18 @@ pub fn write_resources_summaries(experiment_dir: &Path) -> anyhow::Result<Vec<Pa
     let mut written = Vec::new();
     for (node, runs) in &per_node {
         if runs.len() < usable_runs {
-            warn!(target: TARGET, "Node '{node}': resource data found in {}/{usable_runs} runs", runs.len());
+            warn!(target: TARGET, "Node \"{node}\": resource data found in {}/{usable_runs} runs", runs.len());
         }
 
         let summary = summarize(runs);
         if summary.cpu_source == CpuSource::Guest && runs.iter().any(|r| !r.guest.is_empty()) {
-            warn!(target: TARGET, "Node '{node}': no host monitor data, CPU taken from the guest-side readings (not comparable between OSes)");
+            warn!(target: TARGET, "Node \"{node}\": no host monitor data, CPU taken from the guest-side readings (not comparable between OSes)");
         }
 
         let output_path = output_dir.join(format!("{node}.csv"));
         write_summary_csv(&output_path, &summary)?;
-        info!(target: TARGET, "Summarized resources of '{node}' over {} run(s) (CPU from {}): {}", runs.len(), summary.cpu_source.as_str(), output_path.display());
+        info!(target: TARGET, "Summarized resources of \"{node}\" over {} run(s) (CPU from {}):", runs.len(), summary.cpu_source.as_str());
+        info!(target: TARGET, "\t{}", subtract_project_root(&output_path));
         written.push(output_path);
     }
     if written.is_empty() {
