@@ -158,10 +158,21 @@ EOF""",
         { expect = "", control = 'c' }
     ]
 
+# virt-builder debian-13 \
+#  --root-password password:debian \
+#  --upload sources.list:/etc/apt/sources.list \
+#  --install frr,sudo \
+#  --run-command 'useradd -m -s /bin/bash -G sudo debian' \
+#  --run-command 'passwd -d debian' \
+#  --write '/etc/sudoers.d/debian:debian ALL=(ALL) NOPASSWD:ALL' \
+#  --chmod 0440:/etc/sudoers.d/debian \
+#  --format qcow2 \
+#  --size 6G \
+#  -o debian-trixie-frr.qcow2
 [Debian-FRR]
     input_ready = ":~"
-    login = "root"
-    password = "debian"
+    login = "debian"
+    #password = ""
     network_stack = "Linux network stack"
     routing_stack = "FRR"
     interface_prefix = "ens"

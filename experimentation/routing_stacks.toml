@@ -228,6 +228,11 @@ EOF""",
         { send = "sysrc frr_daemons=\"zebra ripd ospfd bgpd\"", assert_true = [["OS", "BSDRP-FRR"], ["ROUTING_PROTOCOL_RIP", "true"], ["ROUTING_PROTOCOL_OSPF", "true"], ["ROUTING_PROTOCOL_BGP", "true"]] },
         { send = "/usr/local/etc/rc.d/frr start", assert_true = [["OS", "BSDRP-FRR"]] },
 
+        # Debian FRR
+        { send = "sudo /usr/lib/frr/ripd -d", assert_true = [["OS", "Debian-FRR"], ["ROUTING_PROTOCOL_RIP", "true"]] },
+        { send = "sudo /usr/lib/frr/ospfd -d", assert_true = [["OS", "Debian-FRR"], ["ROUTING_PROTOCOL_OSPF", "true"]] },
+        { send = "sudo /usr/lib/frr/bgpd -d", assert_true = [["OS", "Debian-FRR"], ["ROUTING_PROTOCOL_BGP", "true"]] },
+
         # SONiC only
         { send = "docker exec -it bgp bash", assert_true = [["OS", "SONiC"]] },
         { expect = ":/", send = "/usr/lib/frr/ripd -d", assert_true = [["OS", "SONiC"], ["ROUTING_PROTOCOL_RIP", "true"]] },
