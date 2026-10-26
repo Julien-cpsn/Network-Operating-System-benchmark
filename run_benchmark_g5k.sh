@@ -33,7 +33,7 @@ fi
 echo 0 | sudo tee /sys/module/kvm/parameters/halt_poll_ns
 echo 0 | sudo tee /sys/kernel/mm/ksm/run
 
-cd "/home/${USER}/survey/Network-Operating-System-GNS3-benchmark"
+cd "/home/${USER}/survey/Network-Operating-System-benchmark"
 
 rm -rf experimentation/results/*
 
