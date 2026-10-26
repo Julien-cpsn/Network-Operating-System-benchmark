@@ -43,6 +43,10 @@ pub async fn deploy_g5k(command: DeployG5kCommand) -> anyhow::Result<()> {
 
     let experiment_commands = fs::read_to_string(&command.experiment_commands)?;
     for (index, command_line) in experiment_commands.lines().enumerate() {
+        if command_line.starts_with('#') || command_line.is_empty() {
+            continue;
+        }
+
         if !command_line.starts_with("cargo run -- run ") {
             bail!("Commands at line {index} must start with \"cargo run -- \"");
         }
