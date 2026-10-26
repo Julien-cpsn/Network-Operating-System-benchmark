@@ -12,34 +12,28 @@
     interfaces_start_at = 0
     images_path = ["/home/julien/Programmation/vm/BSDRP/BSDRP-2.2-full-amd64.img"]
     resources_monitor_commands = [
-        """cat << EOF > resources.sh
-#!/bin/sh
+        """bash << EOF
 pg=\\$(sysctl -n vm.stats.vm.v_page_size)
 prev=\\$(sysctl -n kern.cp_time)
 printf "Total (MiB)\\tAvailable (MiB)\\tUsed (MiB)\\tCPU (perc)\\n"
-EOF""",
-        """cat << EOF >> resources.sh
-while :; do
+""",
+        { expect = "", send = """while :; do
     sleep 1
     cur=\\$(sysctl -n kern.cp_time)
     mem=\\$(sysctl -n -i vm.stats.vm.v_page_count vm.stats.vm.v_free_count \
           vm.stats.vm.v_inactive_count kstat.zfs.misc.arcstats.size kstat.zfs.misc.arcstats.c_min)
-EOF""",
-        """cat << EOF >> resources.sh
-    echo \\$prev \\$cur \\$mem | awk -v pg="\\$pg" '{
+""" },
+        { expect = "", send = """    echo \\$prev \\$cur \\$mem | awk -v pg="\\$pg" '{
         for (k = 1; k <= 5; k++) { d[k] = \\$(k+5) - \\$k; w += d[k] }
         arc = (\\$14 + 0 > \\$15 + 0) ? \\$14 - \\$15 : 0
         tot = \\$11 * pg; av = (\\$12 + \\$13) * pg + arc
         printf "%.1f\\t%.1f\\t%.1f\\t%.1f\\n", tot/1048576, av/1048576, (tot-av)/1048576,
-EOF""",
-        """cat << EOF >> resources.sh
-               (w > 0 ? 100*(w-d[5])/w : 0)
+""" },
+        { expect = "", send = """               (w > 0 ? 100*(w-d[5])/w : 0)
     }'
     prev=\\$cur
 done
-EOF""",
-        "chmod +x resources.sh",
-        "./resources.sh",
+EOF""" },
         { expect = "", wait = 60_000_000 },
         { expect = "", control = 'c' }
     ]
@@ -58,34 +52,28 @@ EOF""",
     interfaces_start_at = 0
     images_path = ["/home/julien/Programmation/vm/BSDRP/BSDRP-2.2-full-amd64.img"]
     resources_monitor_commands = [
-        """cat << EOF > resources.sh
-#!/bin/sh
+        """bash << EOF
 pg=\\$(sysctl -n vm.stats.vm.v_page_size)
 prev=\\$(sysctl -n kern.cp_time)
 printf "Total (MiB)\\tAvailable (MiB)\\tUsed (MiB)\\tCPU (perc)\\n"
-EOF""",
-        """cat << EOF >> resources.sh
-while :; do
+""",
+        { expect = "", send = """while :; do
     sleep 1
     cur=\\$(sysctl -n kern.cp_time)
     mem=\\$(sysctl -n -i vm.stats.vm.v_page_count vm.stats.vm.v_free_count \
           vm.stats.vm.v_inactive_count kstat.zfs.misc.arcstats.size kstat.zfs.misc.arcstats.c_min)
-EOF""",
-        """cat << EOF >> resources.sh
-    echo \\$prev \\$cur \\$mem | awk -v pg="\\$pg" '{
+""" },
+        { expect = "", send = """    echo \\$prev \\$cur \\$mem | awk -v pg="\\$pg" '{
         for (k = 1; k <= 5; k++) { d[k] = \\$(k+5) - \\$k; w += d[k] }
         arc = (\\$14 + 0 > \\$15 + 0) ? \\$14 - \\$15 : 0
         tot = \\$11 * pg; av = (\\$12 + \\$13) * pg + arc
         printf "%.1f\\t%.1f\\t%.1f\\t%.1f\\n", tot/1048576, av/1048576, (tot-av)/1048576,
-EOF""",
-        """cat << EOF >> resources.sh
-               (w > 0 ? 100*(w-d[5])/w : 0)
+""" },
+        { expect = "", send = """               (w > 0 ? 100*(w-d[5])/w : 0)
     }'
     prev=\\$cur
 done
-EOF""",
-        "chmod +x resources.sh",
-        "./resources.sh",
+EOF""" },
         { expect = "", wait = 60_000_000 },
         { expect = "", control = 'c' }
     ]
