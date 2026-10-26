@@ -11,12 +11,12 @@
 //! offloads to the guests: frames on a link stay MTU-sized, like on a wire and like with `Udp`.
 
 use std::fs::{self, OpenOptions};
-use std::process::Command;
+use std::process::{exit, Command};
 use std::sync::RwLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 use anyhow::{anyhow, bail, Context};
 use strum::Display;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info};
 use crate::QEMU_ENABLE_KVM;
 
 const TARGET: &str = "network";
@@ -86,8 +86,8 @@ pub fn select_link_backend(mode: VhostMode) -> anyhow::Result<LinkBackend> {
         VhostMode::Auto => match probe_tap_backend() {
             Ok(()) => LinkBackend::Tap,
             Err(reason) => {
-                warn!(target: TARGET, "vhost not available ({reason}), falling back to UDP tunnels");
-                LinkBackend::Udp
+                error!(target: TARGET, "vhost not available ({reason})");
+                exit(1);
             }
         },
     };
