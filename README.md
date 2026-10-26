@@ -16,15 +16,7 @@ Benchmark and plot performances for router and network OSes.
 
 ## How to use
 
-### 1. Install python packages
-
-With uv:
-
-```shell
-uv sync
-```
-
-### 2. Create custom Debian guest
+### 1. Create custom Debian guest
 
 > [!NOTE]
 > This is guest is needed for running [flent](https://flent.org/) ([iperf3](https://github.com/esnet/iperf), [netperf](https://github.com/HewlettPackard/netperf), [fping](https://fping.org/), [irtt](https://github.com/heistp/irtt)) and [xfr](https://github.com/lance0/xfr) experiments through the network.
@@ -51,7 +43,7 @@ Then fill the `.env` file. You can use the `.env.example` as a starter. Only `GU
 | `QEMU_WORK_DIR`    | `experimentation/vms` | VM disks, pidfiles, QEMU logs and command lines. Wiped before each experiment   |
 | `QEMU_ENABLE_KVM`  | `true`                | Without KVM, VMs are emulated and routers use `-cpu max` instead of `-cpu host` |
 
-### 3. Create an experiments
+### 2. Create an experiments
 
 Fulfil the experiment data needed in the following files:
 
@@ -71,7 +63,7 @@ cargo run -- generate files
 
 Then you should see all possible experiments created in `./experimentation/experiments/` 
 
-### 4. Run the experiments
+### 3. Run the experiments
 
 No server is needed: the tool starts the QEMU VMs itself.
 
@@ -100,13 +92,13 @@ VMs left running (`--no-stop`, crash) are stopped at the start of the next exper
 
 The backend has an integration test (needs QEMU, boots two empty VMs and checks PCI layout, overlays, links and shutdown): `cargo test qemu -- --ignored`
 
-### 5. Pre-compute the results
+### 4. Pre-compute the results
 
 ```shell
 cargo run -- compute
 ```
 
-### 6. Plot the results
+### 5. Plot the results
 
 Then you can plot the results:
 
