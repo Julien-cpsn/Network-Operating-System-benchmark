@@ -37,6 +37,8 @@ cd "/home/${USER}/survey/Network-Operating-System-benchmark"
 
 rm -rf experimentation/results/*
 
+cargo run -- generate files --override
+
 chmod +x run_experiment.sh
 ./run_experiment.sh
 

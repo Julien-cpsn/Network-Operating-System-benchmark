@@ -96,6 +96,8 @@ pub async fn run(run_command: RunCommand) -> anyhow::Result<()> {
         });
     }).expect("Error setting Ctrl-C handler");
 
+    let experiments_start = Instant::now();
+
     let nb_experiments = experiments.len();
     let nb_runs = run_command.run_command.runs;
 
@@ -151,7 +153,10 @@ pub async fn run(run_command: RunCommand) -> anyhow::Result<()> {
         delete_all_taps()?;
     }
 
+    let experiments_duration = experiments_start.elapsed();
+
     info!(target: TARGET, "Finished");
+    info!(target: TARGET, "Total duration: {:?}", experiments_duration);
 
     Ok(())
 }

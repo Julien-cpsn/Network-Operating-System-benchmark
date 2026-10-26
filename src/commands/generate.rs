@@ -19,6 +19,7 @@ use crate::models::operating_system::OperatingSystem;
 use crate::models::protocol::RoutingProtocol;
 use crate::models::test::Test;
 use crate::models::topology::Topology;
+use crate::utils::args::experiment_selection_args_to_string;
 use crate::utils::files::dir::create_dir_if_does_not_exist;
 use crate::utils::files::experiments::EXPERIMENTS_PATH;
 use crate::utils::files::network_stacks::parse_network_stack_list_file;
@@ -29,12 +30,13 @@ use crate::utils::files::topologies::{parse_topologies_list_file, TOPOLOGIES_LIS
 
 const TARGET: &str = "generate";
 
-
 pub fn generate(generate_command: GenerateCommand) -> anyhow::Result<()> {
     let experiment_selection = match &generate_command.command {
         GenerateSubcommand::Run(run_command) => &run_command.experiment_selection,
         GenerateSubcommand::Files { experiment_selection, .. } => &experiment_selection,
-        GenerateSubcommand::Commands { experiment_selection, .. } => &experiment_selection
+        GenerateSubcommand::Commands { experiment_selection, .. } => {
+            &experiment_selection
+        }
     };
 
     let network_stack_list = parse_network_stack_list_file()?;
@@ -74,6 +76,10 @@ pub fn generate(generate_command: GenerateCommand) -> anyhow::Result<()> {
     }
     else {
         warn!(target: TARGET, "Override is not set, existing experiment will NOT be overwritten");
+    }
+
+    if let GenerateSubcommand::Commands { experiment_selection, runs } = &generate_command.command {
+        println!("# cargo run -- generate commands {}", experiment_selection_args_to_string(&experiment_selection, *runs));
     }
 
     let mut total_xp_seconds = 0;
@@ -324,6 +330,10 @@ pub fn generate(generate_command: GenerateCommand) -> anyhow::Result<()> {
         let hours = minutes / 60;
         let days = hours / 24;
         info!(target: TARGET, "Estimated total experiment duration for {} is {:0>3}:{:0>2}:{:0>2}:{:0>2} (D:H:M:S)", os_name, days, hours % 24, minutes % 60, os_xp_seconds % 60);
+    }
+
+    if matches!(&generate_command.command, GenerateSubcommand::Commands { .. }) {
+        println!()
     }
 
     // Experiment count
