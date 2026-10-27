@@ -180,29 +180,29 @@ EOF""",
     images_path = ["/home/jcaposie/survey/vm/Debian-FRR/debian-trixie-frr.qcow2"]
     resources_monitor_commands = [
         """cat << EOF > resources.sh
-    #!/usr/bin/env bash
-    set -eu
+#!/usr/bin/env bash
+set -eu
 
-    cpu() { awk '/^cpu /{printf "%.0f %.0f %.0f\\n", \\$2+\\$3+\\$4+\\$7+\\$8, \\$5+\\$6, \\$9; exit}' /proc/stat; }
+cpu() { awk '/^cpu /{printf "%.0f %.0f %.0f\\n", \\$2+\\$3+\\$4+\\$7+\\$8, \\$5+\\$6, \\$9; exit}' /proc/stat; }
 
-    read -r pb pi ps <<< "\\$(cpu)"
-    printf 'Total (MiB)\\tAvailable (MiB)\\tUsed (MiB)\\tCPU (perc)\\tSteal (perc)\\n'
-    EOF""",
-        """cat << EOF >> resources.sh
-    while :; do
-    sleep 1
-    read -r b i s <<< "\\$(cpu)"
-    awk -v db=\\$((b-pb)) -v di=\\$((i-pi)) -v ds=\\$((s-ps)) '
-        /^MemTotal:/     { mt = \\$2 }
-        /^MemAvailable:/ { ma = \\$2 }
-        END {
-            w = db + di + ds
-            printf "%.1f\\t%.1f\\t%.1f\\t%.1f\\t%.1f\\n", mt/1024, ma/1024, (mt-ma)/1024,
-                   (w > 0 ? 100*db/w : 0), (w > 0 ? 100*ds/w : 0)
-        }' /proc/meminfo
-    pb=\\$b pi=\\$i ps=\\$s
-    done
-    EOF""",
+read -r pb pi ps <<< "\\$(cpu)"
+printf 'Total (MiB)\\tAvailable (MiB)\\tUsed (MiB)\\tCPU (perc)\\tSteal (perc)\\n'
+EOF""",
+    """cat << EOF >> resources.sh
+while :; do
+sleep 1
+read -r b i s <<< "\\$(cpu)"
+awk -v db=\\$((b-pb)) -v di=\\$((i-pi)) -v ds=\\$((s-ps)) '
+    /^MemTotal:/     { mt = \\$2 }
+    /^MemAvailable:/ { ma = \\$2 }
+    END {
+        w = db + di + ds
+        printf "%.1f\\t%.1f\\t%.1f\\t%.1f\\t%.1f\\n", mt/1024, ma/1024, (mt-ma)/1024,
+               (w > 0 ? 100*db/w : 0), (w > 0 ? 100*ds/w : 0)
+    }' /proc/meminfo
+pb=\\$b pi=\\$i ps=\\$s
+done
+EOF""",
         "chmod +x resources.sh",
         "./resources.sh",
         { expect = "", wait = 60_000_000 },

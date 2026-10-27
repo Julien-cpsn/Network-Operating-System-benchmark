@@ -7,11 +7,13 @@ use clap::{Args, Command, FromArgMatches};
 use indexmap::IndexMap;
 use serde_json::{json, Value};
 use tokio::time::sleep;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 use crate::args::g5k::DeployG5kCommand;
 use crate::args::run::RunCommand;
 use crate::commands::g5k::utils::{connect_to_ssh, ensure_identifier, scp_upload, ssh_exec, G5K_API_URL, G5K_ACCESS_HOST};
+use crate::GUEST_IMAGE_PATH;
 use crate::models::operating_system::OperatingSystem;
+use crate::utils::env::harvest_env_variables;
 use crate::utils::files::network_stacks::parse_network_stack_list_file;
 use crate::utils::files::oses::parse_os_list_file;
 use crate::utils::files::routing_stacks::parse_routing_stack_list_file;
@@ -22,12 +24,18 @@ const JOB_POLL_INTERVAL: Duration = Duration::from_secs(5);
 const MAX_CONSECUTIVE_POLL_FAILURES: u32 = 3;
 
 pub async fn deploy_g5k(command: DeployG5kCommand) -> anyhow::Result<()> {
+    harvest_env_variables(false);
+
     // Everything below ends up in a remote shell command or in a path, so only accept safe identifiers
     ensure_identifier("username", &command.login.user, true)?;
     ensure_identifier("site", &command.login.site, false)?;
     ensure_identifier("cluster", &command.cluster, false)?;
     ensure_identifier("queue", &command.queue, false)?;
     ensure_identifier("experiment name", &command.experiment_name, true)?;
+
+    for (index, job_type) in command.job_type.iter().enumerate() {
+        ensure_identifier(&format!("job type {index}"), &job_type, false)?;
+    }
 
     if let Some(walltime) = &command.walltime {
         if walltime.is_empty() || !walltime.chars().all(|c| c.is_ascii_digit() || c == ':') {
@@ -108,6 +116,21 @@ fn prepare_site_machine(user: &str, site: &str, experiment_name: &String, experi
     let session = connect_to_ssh(user)?;
     info!(target: TARGET, "SSH connected successfully");
 
+    let guest_image_path = GUEST_IMAGE_PATH.get().unwrap();
+
+    if !guest_image_path.exists() {
+        error!(target: TARGET, "Guest image path does not exist");
+    }
+
+    let guest_dir = format!("{}/survey/vm/Debian", site);
+    let command = format!("mkdir -p -- ~/{guest_dir}");
+    info!(target: TARGET, "> {command}");
+    ssh_exec(&session, &command)?;
+
+    info!(target: TARGET, "Uploading guest OS");
+    scp_upload(&session, guest_image_path, &format!("{}/{}", guest_dir, guest_image_path.file_name().unwrap().to_string_lossy()), 0o664)?;
+    info!(target: TARGET, "Guest OS uploaded");
+
     for (os_name, os) in operating_systems_to_use {
         let remote_os_dir = format!("{}/survey/vm/{}", site, os_name);
 
@@ -162,6 +185,7 @@ async fn submit_job(command: &DeployG5kCommand, password: &str) -> anyhow::Resul
         "command": format!("/home/{}/run_benchmark_g5k.sh \"{}\"", command.login.user, command.login.user),
         "stdout": format!("stdout-benchmark-nos-{}.txt", command.experiment_name),
         "queue": queue,
+        "types": &command.job_type,
         "properties": format!("cluster='{}'", command.cluster),
         "name": format!("benchmark-nos-{}", command.experiment_name),
     });

@@ -47,7 +47,7 @@ use crate::utils::os_commands::routing::rip_config::router_configure_rip_command
 use crate::utils::os_commands::routing::static_route::router_configure_static_commands;
 use crate::utils::route::generate_distant_network_from_test;
 use crate::utils::test::{clear_shared_dir, harvest_results, test_task};
-use crate::utils::utils::{filter_guests, filter_guests_mut, filter_routers, filter_routers_mut};
+use crate::utils::utils::filter_routers;
 
 pub const INTER_XP_WAIT: u64 = 1;
 pub const INTRA_XP_WAIT: u64 = 60;
@@ -56,7 +56,7 @@ pub const POST_XP_WAIT: u64 = 10;
 pub async fn run(run_command: RunCommand) -> anyhow::Result<()> {
     const TARGET: &str = "run";
 
-    harvest_env_variables();
+    harvest_env_variables(true);
 
     if !SHARED_DIR_PATH.exists() {
         fs::create_dir(&*SHARED_DIR_PATH)?;
@@ -246,67 +246,86 @@ pub async fn run_experiment(
 
     /* START */
 
-    for (guest_name, node) in filter_guests_mut(&mut experiment.network.nodes) {
-        info!(target: TARGET, "Starting guest: {}", guest_name);
-        let vm = node.vm.as_mut().ok_or_else(|| anyhow!("No VM was attached to the guest"))?;
-        vm.start().await?;
-        info!(target: TARGET, "Telnet console: telnet {} {}", vm.console_host, vm.console_port);
-    }
+    // 1. Launch every QEMU process (guests and routers) concurrently.
+    //    `QemuVm::start` is async (tokio::process), so this is just concurrent futures on this task.
+    futures::future::try_join_all(
+        experiment.network.nodes.iter_mut().map(|(node_name, node)| async move {
+            let vm = node.vm.as_mut().ok_or_else(|| anyhow!("No VM was attached to {}", node_name))?;
+            info!(target: TARGET, "Starting node: {}", node_name);
+            vm.start().await?;
+            info!(target: TARGET, "{} telnet console: telnet {} {}", node_name, vm.console_host, vm.console_port);
+            anyhow::Ok(())
+        })
+    ).await?;
+
+    // 2. Wait for boot (router login / guest config) on every console in parallel.
+    //    The console code (rexpect) is blocking, so each node gets its own OS thread.
+    //    `block_in_place` tells tokio this worker is busy, so other tasks (Ctrl-C select) keep running.
+    //    The current experiment logger is thread-local: hand it to each thread.
+    let dispatcher = tracing::dispatcher::get_default(|d| d.clone());
+
+    tokio::task::block_in_place(|| {
+        thread::scope(|scope| {
+            let handles: Vec<_> = experiment.network.nodes.iter().map(|(node_name, node)| {
+                let dispatcher = dispatcher.clone();
+
+                let handle = scope.spawn(move || tracing::dispatcher::with_default(&dispatcher, || -> anyhow::Result<()> {
+                    let vm = node.vm.as_ref().ok_or_else(|| anyhow!("No VM was attached to {}", node_name))?;
+
+                    match &node.node_type {
+                        NodeType::Guest(guest) => {
+                            let mut config_commands = guest_config_commands(guest.ip.address());
+
+                            for distant_network in &node.distant_networks {
+                                config_commands.extend(guest_add_route_commands(&distant_network));
+                            }
+
+                            config_commands.push(OsCommand::new_text(GUEST_INPUT_READY, "netserver", true, false));
+                            config_commands.push(OsCommand::new_line(GUEST_INPUT_READY));
+
+                            execute_commands_from_node(experiment_run_path, node_name, vm, config_commands, Some(5_000), None)
+                        },
+                        NodeType::Router(router) => {
+                            let os = oses.get(&router.os_name).ok_or_else(|| anyhow!("No operating system {} found for {}", router.os_name, node_name))?;
+
+                            let command_context = CommandContext {
+                                router_name: node_name,
+                                router,
+                                os,
+                                network_stack: None,
+                                routing_stack: None,
+                            };
+
+                            let login_commands = router_login_commands(&command_context)?;
+
+                            execute_commands_from_node(experiment_run_path, node_name, vm, login_commands, Some(300_000), None)?;
+                            info!(target: TARGET, "Router ready: {}", node_name);
+                            Ok(())
+                        },
+                    }
+                }));
+
+                (node_name, handle)
+            }).collect();
+
+            // Join every thread (no early return), then report all failures at once
+            let errors: Vec<String> = handles
+                .into_iter()
+                .filter_map(|(node_name, handle)| match handle.join() {
+                    Ok(Ok(())) => None,
+                    Ok(Err(error)) => Some(format!("{node_name}: {error:#}")),
+                    Err(_) => Some(format!("{node_name}: thread panicked")),
+                })
+                .collect();
+
+            match errors.is_empty() {
+                true => Ok(()),
+                false => Err(anyhow!("Node startup failed:\n{}", errors.join("\n"))),
+            }
+        })
+    })?;
 
     /* CONFIG */
-
-    for (guest_name, node) in filter_guests(&experiment.network.nodes) {
-        let guest = node.unwrap_guest();
-        let mut config_commands = guest_config_commands(guest.ip.address());
-
-        for distant_network in &node.distant_networks {
-            let add_route_command = guest_add_route_commands(&distant_network);
-            config_commands.extend(add_route_command);
-        }
-
-        config_commands.push(OsCommand::new_text(GUEST_INPUT_READY, "netserver", true, false));
-        config_commands.push(OsCommand::new_line(GUEST_INPUT_READY));
-
-        execute_commands_from_node(
-            &experiment_run_path,
-            &guest_name,
-            node.vm.as_ref().unwrap(),
-            config_commands,
-            Some(4_000),
-            None
-        )?;
-    }
-
-    for (router_name, node) in filter_routers_mut(&mut experiment.network.nodes) {
-        info!(target: TARGET, "Starting router: {}", router_name);
-        // Login
-        let router = node.unwrap_router();
-        let os = oses.get(&router.os_name).ok_or_else(|| anyhow!("No operating system {} found for {}", router.os_name, router_name))?;
-
-        let command_context = CommandContext {
-            router_name,
-            router: &router,
-            os,
-            network_stack: None,
-            routing_stack: None,
-        };
-
-        let login_commands = router_login_commands(&command_context)?;
-
-        let vm = node.vm.as_mut().ok_or_else(|| anyhow!("No VM was attached to the router"))?;
-        vm.start().await?;
-
-        info!(target: TARGET, "Telnet console: telnet {} {}", vm.console_host, vm.console_port);
-
-        execute_commands_from_node(
-            &experiment_run_path,
-            &router_name,
-            &vm,
-            login_commands,
-            Some(180_000),
-            None
-        )?;
-    }
 
     for (router_name, node) in filter_routers(&experiment.network.nodes) {
         let vm = node.vm.as_ref().ok_or_else(|| anyhow!("No VM was attached to the router"))?;

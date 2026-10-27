@@ -19,6 +19,16 @@ sudo apt install -y \
     iproute2 \
     procps
 
+# cargo lives in ~/.cargo/bin, which non-interactive job shells do not have in PATH
+if [ -f "/home/${USER}/.cargo/env" ]; then
+        . "/home/${USER}/.cargo/env"
+fi
+
+if ! command -v cargo >/dev/null 2>&1; then
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+        . "/home/${USER}/.cargo/env"
+fi
+
 # The VMs are started by the benchmark user and need KVM
 if [ ! -w /dev/kvm ]; then
         sudo chmod o+rw /dev/kvm

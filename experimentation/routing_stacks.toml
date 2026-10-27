@@ -232,6 +232,7 @@ EOF""",
         { send = "sudo /usr/lib/frr/ripd -d", assert_true = [["OS", "Debian-FRR"], ["ROUTING_PROTOCOL_RIP", "true"]] },
         { send = "sudo /usr/lib/frr/ospfd -d", assert_true = [["OS", "Debian-FRR"], ["ROUTING_PROTOCOL_OSPF", "true"]] },
         { send = "sudo /usr/lib/frr/bgpd -d", assert_true = [["OS", "Debian-FRR"], ["ROUTING_PROTOCOL_BGP", "true"]] },
+        { wait = 5_000, assert_true = [["OS", "Debian-FRR"]] },
 
         # SONiC only
         { send = "docker exec -it bgp bash", assert_true = [["OS", "SONiC"]] },
