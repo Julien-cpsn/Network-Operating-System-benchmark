@@ -69,7 +69,7 @@ pub fn execute_commands(
 }
 
 fn wait_loop(telnet: &mut PtySession, command: &OsCommand, remote_stop: &Option<Arc<AtomicBool>>) -> anyhow::Result<()> {
-    'timeout_loop: loop {
+    loop {
         /*
         if now.elapsed() >= TIMEOUT {
             return Err(anyhow::anyhow!("Command \"{}\" timed out when waiting for \"{}\"", &command.send, &command.expect));
@@ -82,21 +82,21 @@ fn wait_loop(telnet: &mut PtySession, command: &OsCommand, remote_stop: &Option<
 
         if let Ok(buffer) = expect_err {
             trace!(target: "rx", "{}", buffer);
-            break 'timeout_loop;
+            break;
         }
         else if command.can_fail {
             trace_telnet_output(telnet)?;
-            break 'timeout_loop;
+            break;
         }
         else {
             trace_telnet_output(telnet)?;
 
             if let Some(remote_stop) = &remote_stop && remote_stop.load(Ordering::Relaxed) == true {
                 trace!(target: TARGET, "remote stop");
-                break 'timeout_loop;
+                break;
             }
 
-            continue 'timeout_loop;
+            continue;
         }
     }
 
@@ -127,13 +127,13 @@ fn send_command(telnet: &mut PtySession, command: &OsCommand, remote_stop: &Opti
         SendType::Wait(time_ms) => {
             let to_wait = Duration::from_millis(*time_ms);
 
-            'wait_loop: while now.elapsed() < to_wait {
+            while now.elapsed() < to_wait {
                 trace_telnet_output(telnet)?;
                 sleep(Duration::from_millis(100));
 
                 if let Some(remote_stop) = &remote_stop && remote_stop.load(Ordering::Relaxed) == true {
                     trace!(target: TARGET, "remote stop");
-                    break 'wait_loop;
+                    break;
                 }
             }
         }
