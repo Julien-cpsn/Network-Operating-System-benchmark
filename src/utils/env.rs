@@ -9,7 +9,7 @@ use crate::utils::qemu::network::{select_link_backend, VhostMode};
 
 const TARGET: &str = "env";
 
-pub fn harvest_env_variables() {
+pub fn harvest_env_variables(need_vhost: bool) {
     dotenv().ok();
 
     let current_dir = env::current_dir().expect("Could not read current directory");
@@ -76,17 +76,19 @@ pub fn harvest_env_variables() {
         info!(target: TARGET, "KVM disabled, VMs are emulated (TCG) and routers use \"-cpu max\" instead of \"-cpu host\"");
     }
 
-    let vhost_mode = match env::var("QEMU_VHOST") {
-        Ok(value) => VhostMode::parse(&value).unwrap_or_else(|err| {
+    if need_vhost {
+        let vhost_mode = match env::var("QEMU_VHOST") {
+            Ok(value) => VhostMode::parse(&value).unwrap_or_else(|err| {
+                error!(target: TARGET, "{err}");
+                exit(1);
+            }),
+            Err(_) => VhostMode::Auto,
+        };
+
+        if let Err(err) = select_link_backend(vhost_mode) {
             error!(target: TARGET, "{err}");
             exit(1);
-        }),
-        Err(_) => VhostMode::Auto,
-    };
-
-    if let Err(err) = select_link_backend(vhost_mode) {
-        error!(target: TARGET, "{err}");
-        exit(1);
+        }
     }
 }
 

@@ -19,15 +19,19 @@ pub struct DeployG5kCommand {
     pub experiment_commands: PathBuf,
 
     /// Grid'5000 queue to submit the job to
-    #[arg(long, default_value = "abaca")]
+    #[arg(long)]
     pub queue: String,
 
-    /// Abaca priority level (p1..p4). Overrides --queue. Must be a level you have access to on the cluster
+    /// Grid'5000 job type
+    #[arg(long)]
+    pub job_type: Vec<String>,
+
+    /// Queue priority level (p1..p4). Overrides --queue. Must be a level you have access to on the cluster
     #[arg(long, value_enum)]
     pub priority: Option<G5kPriority>,
 
     /// Grid'5000 cluster to reserve a node on
-    #[arg(long, default_value = "grdix")]
+    #[arg(long)]
     pub cluster: String,
 
     /// Reservation walltime (ex: "3" or "3:30"). Site default if absent

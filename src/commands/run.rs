@@ -56,7 +56,7 @@ pub const POST_XP_WAIT: u64 = 10;
 pub async fn run(run_command: RunCommand) -> anyhow::Result<()> {
     const TARGET: &str = "run";
 
-    harvest_env_variables();
+    harvest_env_variables(true);
 
     if !SHARED_DIR_PATH.exists() {
         fs::create_dir(&*SHARED_DIR_PATH)?;
