@@ -10,7 +10,7 @@
         ["VirtIO", "vtnet"]
     ]
     interfaces_start_at = 0
-    images_path = ["/home/julien/Programmation/vm/BSDRP/BSDRP-2.2-full-amd64.img"]
+    images_path = ["/home/jcaposie/survey/vm/BSDRP/BSDRP-2.2-full-amd64.img"]
     resources_monitor_commands = [
         """bash << EOF
 pg=\\$(sysctl -n vm.stats.vm.v_page_size)
@@ -50,7 +50,7 @@ EOF""" },
         ["VirtIO", "vtnet"]
     ]
     interfaces_start_at = 0
-    images_path = ["/home/julien/Programmation/vm/BSDRP/BSDRP-2.2-full-amd64.img"]
+    images_path = ["/home/jcaposie/survey/vm/BSDRP/BSDRP-2.2-full-amd64.img"]
     resources_monitor_commands = [
         """bash << EOF
 pg=\\$(sysctl -n vm.stats.vm.v_page_size)
@@ -86,7 +86,7 @@ EOF""" },
     routing_stack = "FRR"
     interface_prefix = "dp0s"
     interfaces_start_at = 3
-    images_path = ["/home/julien/Programmation/vm/DANOS/danos-2105-base-amd64.qcow2"]
+    images_path = ["/home/jcaposie/survey/vm/DANOS/danos-2105-base-amd64.qcow2"]
     resources_monitor_commands = [
         """cat << EOF > resources.sh
 #!/usr/bin/env bash
@@ -126,7 +126,7 @@ EOF""",
     #routing_stack = null
     interface_prefix = "ens"
     interfaces_start_at = 3
-    images_path = ["/home/julien/Programmation/vm/Debian/debian-trixie.qcow2"]
+    images_path = ["/home/jcaposie/survey/vm/Debian/debian-trixie.qcow2"]
     resources_monitor_commands = [
         """cat << EOF > resources.sh
 #!/usr/bin/env bash
@@ -177,7 +177,7 @@ EOF""",
     routing_stack = "FRR"
     interface_prefix = "ens"
     interfaces_start_at = 3
-    images_path = ["/home/julien/Programmation/vm/Debian/debian-trixie-frr.qcow2"]
+    images_path = ["/home/jcaposie/survey/vm/Debian-FRR/debian-trixie-frr.qcow2"]
     resources_monitor_commands = [
         """cat << EOF > resources.sh
     #!/usr/bin/env bash
@@ -218,7 +218,7 @@ EOF""",
     interface_prefix = "1/1/"
     interfaces_start_at = 0
     images_path = [
-        "/home/julien/Programmation/vm/DNOS10/OS10_10.6.1.3.124V-portable.qcow2",
+        "/home/jcaposie/survey/vm/DNOS10/OS10_10.6.1.3.124V-portable.qcow2",
     ]
     resources_monitor_commands = [
         { expect = ":~" , send = """cat << EOF > resources.sh
@@ -274,7 +274,7 @@ EOF""" },
     routing_stack = "EXOS routing stack"
     interface_prefix = ""
     interfaces_start_at = 0
-    images_path = ["/home/julien/Programmation/vm/EXOS/EXOS-VM_33.6.1.14.qcow2"]
+    images_path = ["/home/jcaposie/survey/vm/EXOS/EXOS-VM_33.6.1.14.qcow2"]
     resources_monitor_commands = [
         "edit script bash.py",
         { expect = "", send = "i"},
@@ -333,7 +333,7 @@ EOF""" },
         ["VirtIO", "vtnet"]
     ]
     interfaces_start_at = 0
-    images_path = ["/home/julien/Programmation/vm/FreeBSD/FreeBSD-15.1-RELEASE-amd64-zfs-portable.qcow2"]
+    images_path = ["/home/jcaposie/survey/vm/FreeBSD/FreeBSD-15.1-RELEASE-amd64-zfs-portable.qcow2"]
     resources_monitor_commands = [
         """cat << EOF > resources.sh
 #!/bin/sh
@@ -409,7 +409,7 @@ EOF""",
     interface_prefix = "Ethernet"
     interfaces_start_at = -1
     gap_between_interfaces = 4
-    images_path = ["/home/julien/Programmation/vm/SONiC/sonic-vs-2025-05.img"]
+    images_path = ["/home/jcaposie/survey/vm/SONiC/sonic-vs-2025-05.img"]
     resources_monitor_commands = [
         """cat << EOF > resources.sh
 #!/usr/bin/env bash
@@ -453,7 +453,7 @@ EOF""",
 #    #routing_stack = null
 #    interface_prefix = "ens"
 #    interfaces_start_at = 3
-#    images_path = ["/home/julien/Programmation/vm/Junos vRouter/vJunos-switch-26.2R1.7.qcow2"]
+#    images_path = ["/home/jcaposie/survey/vm/Junos vRouter/vJunos-switch-26.2R1.7.qcow2"]
 #    resources_monitor_commands = [
 #        """printf "Total (MiB)\\tAvailable (MiB)\\tUsed (MiB)\\tCPU (perc)\\n" &&
 #    while true
@@ -472,7 +472,7 @@ EOF""",
     routing_stack = "FRR"
     interface_prefix = "eth"
     interfaces_start_at = 0
-    images_path = ["/home/julien/Programmation/vm/VyOS/vyos-2025.04.04-0018-rolling-generic-amd64.iso"]
+    images_path = ["/home/jcaposie/survey/vm/VyOS/vyos-2025.04.04-0018-rolling-generic-amd64.iso"]
     resources_monitor_commands = [
         """cat << EOF > resources.sh
 #!/usr/bin/env bash
