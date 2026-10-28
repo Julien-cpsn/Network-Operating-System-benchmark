@@ -10,7 +10,7 @@
         ["VirtIO", "vtnet"]
     ]
     interfaces_start_at = 0
-    images_path = ["/home/jcaposie/survey/vm/BSDRP/BSDRP-2.2-full-amd64.img"]
+    images_path = ["/home/jcaposie/survey/vm/BSDRP-BIRD2/BSDRP-2.2-full-amd64.img"]
     resources_monitor_commands = [
         """bash << EOF
 pg=\\$(sysctl -n vm.stats.vm.v_page_size)
@@ -50,7 +50,7 @@ EOF""" },
         ["VirtIO", "vtnet"]
     ]
     interfaces_start_at = 0
-    images_path = ["/home/jcaposie/survey/vm/BSDRP/BSDRP-2.2-full-amd64.img"]
+    images_path = ["/home/jcaposie/survey/vm/BSDRP-FRR/BSDRP-2.2-full-amd64.img"]
     resources_monitor_commands = [
         """bash << EOF
 pg=\\$(sysctl -n vm.stats.vm.v_page_size)
