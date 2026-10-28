@@ -29,9 +29,7 @@ pub async fn network_test_task(
 
     network_test_commands.push(OsCommand::new_line(GUEST_INPUT_READY));
     network_test_commands.push(OsCommand::new_line(GUEST_INPUT_READY));
-
-    dbg!(&network_test_commands);
-
+    
     if let Err(err) = execute_commands(
         &experiment_run_path,
         &guest_name,

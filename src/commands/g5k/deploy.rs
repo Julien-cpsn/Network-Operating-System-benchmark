@@ -1,4 +1,5 @@
 use std::{env, fs};
+use std::cmp::{min};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -104,7 +105,8 @@ pub async fn deploy_g5k(command: DeployG5kCommand) -> anyhow::Result<()> {
 
     wait_for_job(&command, &password, job_id).await?;
 
-    info!(target: TARGET, "Job {job_id} terminated. Its output is in \"~/{}/stdout-benchmark-nos-{}.txt\" on Grid'5000", command.login.site, command.experiment_name);
+    info!(target: TARGET, "Job {job_id} terminated. Its output is in \"~/{}/{}\" on Grid'5000", command.login.site, experiment_stdout_file(&command.experiment_name));
+    info!(target: TARGET, "Results are available at: https://api.grid5000.fr/stable/sites/{}/public/{}/", &command.login.site,  &command.login.user);
 
     Ok(())
 }
@@ -128,7 +130,7 @@ fn prepare_site_machine(user: &str, site: &str, experiment_name: &String, experi
     ssh_exec(&session, &command)?;
 
     info!(target: TARGET, "Uploading guest OS");
-    scp_upload(&session, guest_image_path, &format!("{}/{}", guest_dir, guest_image_path.file_name().unwrap().to_string_lossy()), 0o664)?;
+    scp_upload(&session, guest_image_path, &format!("{}/{}", guest_dir, guest_image_path.file_name().unwrap().to_string_lossy()), 0o664, false)?;
     info!(target: TARGET, "Guest OS uploaded");
 
     for (os_name, os) in operating_systems_to_use {
@@ -144,21 +146,21 @@ fn prepare_site_machine(user: &str, site: &str, experiment_name: &String, experi
             let remote_path = format!("{remote_os_dir}/{}", file_name.to_string_lossy());
 
             info!(target: TARGET, "Uploading \"{}\" to \"~/{remote_path}\"", image_path.display());
-            scp_upload(&session, &image_path, &remote_path, 0o644)?;
+            scp_upload(&session, &image_path, &remote_path, 0o644, false)?;
         }
     }
 
     info!(target: TARGET, "All images uploaded");
 
     info!(target: TARGET, "Uploading the commands to Grid'5000");
-    scp_upload(&session, &experiment_commands, &format!("{site}/survey/Network-Operating-System-benchmark/run_experiment.sh"), 0o774)?;
+    scp_upload(&session, &experiment_commands, &format!("{site}/survey/Network-Operating-System-benchmark/run_experiment.sh"), 0o774, true)?;
     info!(target: TARGET, "Commands uploaded as \"run_experiment.sh\"");
 
     info!(target: TARGET, "Uploading run_benchmark_g5k.sh to Grid'5000");
-    scp_upload(&session, &env::current_dir()?.as_path().join("run_benchmark_g5k.sh"), &format!("{site}/run_benchmark_g5k.sh"), 0o774)?;
+    scp_upload(&session, &env::current_dir()?.as_path().join("run_benchmark_g5k.sh"), &format!("{site}/run_benchmark_g5k.sh"), 0o774, false)?;
     info!(target: TARGET, "run_benchmark_g5k.sh uploaded");
 
-    let command = format!("rm ~/stdout-benchmark-nos-{experiment_name}.txt");
+    let command = format!("rm ~/{}", experiment_stdout_file(&experiment_name));
     info!(target: TARGET, "> {command}");
     let _ = ssh_exec(&session, &command);
 
@@ -183,7 +185,7 @@ async fn submit_job(command: &DeployG5kCommand, password: &str) -> anyhow::Resul
     let payload = json!({
         "resources": resources,
         "command": format!("/home/{}/run_benchmark_g5k.sh \"{}\"", command.login.user, command.login.user),
-        "stdout": format!("stdout-benchmark-nos-{}.txt", command.experiment_name),
+        "stdout": experiment_stdout_file(&command.experiment_name),
         "queue": queue,
         "types": &command.job_type,
         "properties": format!("cluster='{}'", command.cluster),
@@ -224,6 +226,8 @@ async fn submit_job(command: &DeployG5kCommand, password: &str) -> anyhow::Resul
 }
 
 async fn wait_for_job(command: &DeployG5kCommand, password: &str, job_id: u64) -> anyhow::Result<()> {
+    let session = connect_to_ssh(&command.login.user)?;
+
     let client = reqwest::Client::new();
     let job_url = format!("{G5K_API_URL}/sites/{}/jobs/{job_id}", command.login.site);
 
@@ -251,13 +255,29 @@ async fn wait_for_job(command: &DeployG5kCommand, password: &str, job_id: u64) -
         };
 
         if state != last_state {
-            info!(target: TARGET, "Job {job_id} state: {state}");
             last_state = state.clone();
         }
 
         match state.as_str() {
-            "terminated" => return Ok(()),
-            "error" => bail!("Job {job_id} ended in error"),
+            "running" => {
+                print!("\x1B[2J\x1B[1;1H");
+                info!(target: TARGET, "Job {job_id} state: {state}");
+                let output = ssh_exec(&session, &format!("cat ~/{}/{}", &command.login.site, experiment_stdout_file(&command.experiment_name)))?;
+                let lines = output.split('\n').collect::<Vec<&str>>();
+                let max = min(lines.len(), 15);
+                println!("====================\n\n{}", &lines[lines.len() - max..].join("\n"));
+            }
+            "terminated" => {
+                println!("====================");
+                info!(target: TARGET, "Job {job_id} state: {state}");
+                return Ok(())
+            },
+            "error" => {
+                let output = ssh_exec(&session, &format!("cat ~/{}/{}", &command.login.site, experiment_stderr_file(&command.experiment_name, job_id)))?;
+                let lines = output.split('\n').collect::<Vec<&str>>();
+                let max = min(lines.len(), 15);
+                bail!("Job {job_id} ended in error:\n\n{}", &lines[lines.len() - max..].join("\n"))
+            },
             _ => {}
         }
     }
@@ -276,4 +296,12 @@ async fn fetch_job_state(client: &reqwest::Client, job_url: &str, user: &str, pa
         .as_str()
         .map(str::to_string)
         .ok_or_else(|| anyhow!("no \"state\" field in {job}"))
+}
+
+fn experiment_stdout_file(experiment_name: &str) -> String {
+    format!("stdout-benchmark-nos-{}.txt", experiment_name)
+}
+
+fn experiment_stderr_file(experiment_name: &str, job_id: u64) -> String {
+    format!("OAR.benchmark-nos-{}.{}.stderr", experiment_name, job_id)
 }
