@@ -157,7 +157,7 @@ fn prepare_site_machine(user: &str, site: &str, experiment_name: &String, experi
     info!(target: TARGET, "Commands uploaded as \"run_experiment.sh\"");
 
     info!(target: TARGET, "Uploading run_benchmark_g5k.sh to Grid'5000");
-    scp_upload(&session, &env::current_dir()?.as_path().join("run_benchmark_g5k.sh"), &format!("{site}/run_benchmark_g5k.sh"), 0o774, false)?;
+    scp_upload(&session, &env::current_dir()?.as_path().join("run_benchmark_g5k.sh"), &format!("{site}/run_benchmark_g5k.sh"), 0o774, true)?;
     info!(target: TARGET, "run_benchmark_g5k.sh uploaded");
 
     let command = format!("rm ~/{}", experiment_stdout_file(&experiment_name));
@@ -265,10 +265,10 @@ async fn wait_for_job(command: &DeployG5kCommand, password: &str, job_id: u64) -
                 let output = ssh_exec(&session, &format!("cat ~/{}/{}", &command.login.site, experiment_stdout_file(&command.experiment_name)))?;
                 let lines = output.split('\n').collect::<Vec<&str>>();
                 let max = min(lines.len(), 15);
-                println!("====================\n\n{}", &lines[lines.len() - max..].join("\n"));
+                println!("========================================\n\n{}", &lines[lines.len() - max..].join("\n"));
             }
             "terminated" => {
-                println!("====================");
+                println!("========================================");
                 info!(target: TARGET, "Job {job_id} state: {state}");
                 return Ok(())
             },

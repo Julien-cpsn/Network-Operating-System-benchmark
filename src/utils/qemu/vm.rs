@@ -190,7 +190,7 @@ impl QemuVm {
             .clone();
 
         if NicType::VirtIO == nic_type && link_backend() == LinkBackend::Udp {
-            error!(target: TARGET, "Vhost link is needed for the VirtIO NIC but the backend is unavailable because it was not setup");
+            error!(target: TARGET, "Vhost link is needed for the VirtIO NIC but the backend is unavailable because it was not setup or disabled");
             exit(1);
         }
 
