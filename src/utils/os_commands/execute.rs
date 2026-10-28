@@ -49,9 +49,9 @@ pub fn execute_commands(
 
 
         for (index, command) in commands.iter().enumerate() {
-            debug!(target: "tx", "{: >2}/{: >2} > {}", index+1, commands.len(), &command.send);
+            debug!(target: "tx", "{} {: >2}/{: >2} > {}", node_name, index+1, commands.len(), &command.send);
 
-            wait_loop(&mut telnet, &command, &remote_stop)?;
+            wait_loop(&mut telnet, node_name, &command, &remote_stop)?;
             send_command(&mut telnet, &command, &remote_stop)?;
         }
 
@@ -68,7 +68,7 @@ pub fn execute_commands(
     })
 }
 
-fn wait_loop(telnet: &mut PtySession, command: &OsCommand, remote_stop: &Option<Arc<AtomicBool>>) -> anyhow::Result<()> {
+fn wait_loop(telnet: &mut PtySession, node_name: &str, command: &OsCommand, remote_stop: &Option<Arc<AtomicBool>>) -> anyhow::Result<()> {
     loop {
         /*
         if now.elapsed() >= TIMEOUT {
@@ -81,7 +81,7 @@ fn wait_loop(telnet: &mut PtySession, command: &OsCommand, remote_stop: &Option<
         let expect_err = telnet.exp_string(&command.expect);
 
         if let Ok(buffer) = expect_err {
-            trace!(target: "rx", "{}", buffer);
+            trace!(target: "rx", "{} | {}", node_name, buffer);
             break;
         }
         else if command.can_fail {

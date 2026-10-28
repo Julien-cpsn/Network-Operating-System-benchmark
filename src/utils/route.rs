@@ -3,12 +3,14 @@ use crate::models::nodes::node::{DistantNetwork, Node, NodeType};
 use crate::models::nodes::router::Router;
 use crate::utils::os_commands::guest::GUEST_NIC_INDEX;
 use anyhow::anyhow;
-use cidr::Ipv4Cidr;
+use cidr::{Ipv4Cidr, Ipv4Inet};
 use tracing::debug;
 
 const TARGET: &str = "route";
 
-pub fn generate_distant_network_from_test(from_node_name: &str, from_node: &mut Node, distant_network: Ipv4Cidr, gateway_network: Ipv4Cidr) -> anyhow::Result<()> {
+pub fn generate_distant_network_from_test(from_node_name: &str, from_node: &mut Node, distant_ip: Ipv4Inet, gateway_network: Ipv4Cidr) -> anyhow::Result<()> {
+    let distant_network = distant_ip.network();
+    
     if matches!(from_node.node_type, NodeType::Router(Router { .. })) {
         return Err(anyhow!("Cannot test from/to router nodes, only guests"))
     }
@@ -23,6 +25,7 @@ pub fn generate_distant_network_from_test(from_node_name: &str, from_node: &mut 
         network: distant_network,
         gateway,
         adapter_index: GUEST_NIC_INDEX,
+        target_ip: distant_ip.address(),
     });
 
     Ok(())

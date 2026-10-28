@@ -12,7 +12,7 @@ use crate::models::nic::NicType;
 use crate::models::nodes::node::Node;
 use crate::utils::files::shared_dir::SHARED_DIR_PATH;
 use crate::utils::qemu::image::create_linked_clone;
-use crate::utils::qemu::network::{tap_vhost, VhostMode, select_link_backend, link_backend, LinkBackend};
+use crate::utils::qemu::network::{tap_vhost, link_backend, LinkBackend};
 use crate::utils::qemu::ports::allocate_tcp_port;
 use crate::utils::qemu::process::{is_qemu_alive, read_pid_file, terminate_qemu, wait_for_exit, PID_FILE_NAME};
 use crate::utils::qemu::qmp::qmp_execute;
@@ -104,11 +104,6 @@ impl QemuVm {
             bail!("{name}: QEMU supports only max {MAX_DISKS} images per VM");
         }
 
-        if NicType::VirtIO == adapter_model && link_backend() == LinkBackend::Udp {
-            error!("Vhost link is needed for the VirtIO NIC but the backend is unavailable because it was not setup");
-            exit(1);
-        }
-
         let dir = experiment_dir.join(sanitize_name(name));
         fs::create_dir_all(&dir)?;
 
@@ -193,6 +188,11 @@ impl QemuVm {
             .ok_or_else(|| anyhow!("Router {name} has no NIC"))?
             .nic_type
             .clone();
+
+        if NicType::VirtIO == nic_type && link_backend() == LinkBackend::Udp {
+            error!(target: TARGET, "Vhost link is needed for the VirtIO NIC but the backend is unavailable because it was not setup");
+            exit(1);
+        }
 
         // "-cpu host" is only available with KVM
         let cpu_model = if *QEMU_ENABLE_KVM.get().unwrap() { "host" } else { "max" };
