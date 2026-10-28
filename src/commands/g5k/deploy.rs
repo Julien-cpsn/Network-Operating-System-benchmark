@@ -24,7 +24,7 @@ const JOB_POLL_INTERVAL: Duration = Duration::from_secs(5);
 const MAX_CONSECUTIVE_POLL_FAILURES: u32 = 3;
 
 pub async fn deploy_g5k(command: DeployG5kCommand) -> anyhow::Result<()> {
-    harvest_env_variables(false);
+    harvest_env_variables();
 
     // Everything below ends up in a remote shell command or in a path, so only accept safe identifiers
     ensure_identifier("username", &command.login.user, true)?;
