@@ -1,18 +1,18 @@
 use std::collections::hash_map::DefaultHasher;
-use std::fs;
+use std::{fs};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
+use std::process::{exit, Stdio};
 use std::time::Duration;
 use anyhow::{anyhow, bail, Context};
 use tokio::process::Command;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 use crate::{QEMU_BINARY, QEMU_ENABLE_KVM};
 use crate::models::nic::NicType;
 use crate::models::nodes::node::Node;
 use crate::utils::files::shared_dir::SHARED_DIR_PATH;
 use crate::utils::qemu::image::create_linked_clone;
-use crate::utils::qemu::network::tap_vhost;
+use crate::utils::qemu::network::{tap_vhost, VhostMode, select_link_backend, link_backend, LinkBackend};
 use crate::utils::qemu::ports::allocate_tcp_port;
 use crate::utils::qemu::process::{is_qemu_alive, read_pid_file, terminate_qemu, wait_for_exit, PID_FILE_NAME};
 use crate::utils::qemu::qmp::qmp_execute;
@@ -102,6 +102,11 @@ impl QemuVm {
     ) -> anyhow::Result<QemuVm> {
         if images.len() > MAX_DISKS {
             bail!("{name}: QEMU supports only max {MAX_DISKS} images per VM");
+        }
+
+        if NicType::VirtIO == adapter_model && link_backend() == LinkBackend::Udp {
+            error!("Vhost link is needed for the VirtIO NIC but the backend is unavailable because it was not setup");
+            exit(1);
         }
 
         let dir = experiment_dir.join(sanitize_name(name));

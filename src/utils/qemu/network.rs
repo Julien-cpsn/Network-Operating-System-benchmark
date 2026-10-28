@@ -16,7 +16,7 @@ use std::sync::RwLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 use anyhow::{anyhow, bail, Context};
 use strum::Display;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 use crate::QEMU_ENABLE_KVM;
 
 const TARGET: &str = "network";
@@ -80,14 +80,14 @@ pub fn select_link_backend(mode: VhostMode) -> anyhow::Result<LinkBackend> {
     let backend = match mode {
         VhostMode::Off => LinkBackend::Udp,
         VhostMode::On => {
-            probe_tap_backend().map_err(|reason| anyhow!("QEMU_VHOST=on but vhost cannot be used: {reason}"))?;
+            probe_tap_backend().map_err(|reason| anyhow!("QEMU_VHOST is on but vhost cannot be used: {reason}"))?;
             LinkBackend::Tap
         },
         VhostMode::Auto => match probe_tap_backend() {
             Ok(()) => LinkBackend::Tap,
             Err(reason) => {
-                error!(target: TARGET, "vhost not available ({reason})");
-                exit(1);
+                warn!(target: TARGET, "vhost not available ({reason}). The experiment will be killed if a VirtIO NIC is used");
+                LinkBackend::Udp
             }
         },
     };

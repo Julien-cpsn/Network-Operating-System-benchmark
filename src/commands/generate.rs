@@ -193,7 +193,7 @@ pub fn generate(generate_command: GenerateCommand) -> anyhow::Result<()> {
                                     GenerateSubcommand::Commands { runs, .. } => *runs
                                 };
 
-                                os_xp_seconds += (60 * topology.network.nodes.len() + INTRA_XP_WAIT as usize + longest_xp as usize + POST_XP_WAIT as usize + INTRA_XP_WAIT as usize) * runs as usize;
+                                os_xp_seconds += (90 * 1 + INTRA_XP_WAIT as usize + longest_xp as usize + POST_XP_WAIT as usize + INTRA_XP_WAIT as usize) * runs as usize;
 
                                 match &generate_command.command {
                                     GenerateSubcommand::Run(_) | GenerateSubcommand::Files { .. } => {

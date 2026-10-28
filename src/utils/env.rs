@@ -3,13 +3,13 @@ use std::fs::OpenOptions;
 use std::path::PathBuf;
 use std::process::{exit, Command};
 use dotenv::dotenv;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use crate::{GUEST_IMAGE_PATH, QEMU_BINARY, QEMU_ENABLE_KVM, QEMU_IMG_BINARY, QEMU_WORK_DIR};
 use crate::utils::qemu::network::{select_link_backend, VhostMode};
 
 const TARGET: &str = "env";
 
-pub fn harvest_env_variables(need_vhost: bool) {
+pub fn harvest_env_variables() {
     dotenv().ok();
 
     let current_dir = env::current_dir().expect("Could not read current directory");
@@ -76,19 +76,17 @@ pub fn harvest_env_variables(need_vhost: bool) {
         info!(target: TARGET, "KVM disabled, VMs are emulated (TCG) and routers use \"-cpu max\" instead of \"-cpu host\"");
     }
 
-    if need_vhost {
-        let vhost_mode = match env::var("QEMU_VHOST") {
-            Ok(value) => VhostMode::parse(&value).unwrap_or_else(|err| {
-                error!(target: TARGET, "{err}");
-                exit(1);
-            }),
-            Err(_) => VhostMode::Auto,
-        };
-
-        if let Err(err) = select_link_backend(vhost_mode) {
-            error!(target: TARGET, "{err}");
+    let vhost_mode = match env::var("QEMU_VHOST") {
+        Ok(value) => VhostMode::parse(&value).unwrap_or_else(|err| {
+            warn!(target: TARGET, "{err}");
             exit(1);
-        }
+        }),
+        Err(_) => VhostMode::Auto,
+    };
+
+    if let Err(err) = select_link_backend(vhost_mode) {
+        error!(target: TARGET, "{err}");
+        exit(1);
     }
 }
 
