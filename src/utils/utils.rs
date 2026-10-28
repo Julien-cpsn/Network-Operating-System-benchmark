@@ -2,17 +2,6 @@ use crate::models::nodes::node::{Node, NodeType};
 use indexmap::IndexMap;
 use std::collections::HashSet;
 
-pub fn filter_guests_mut(nodes: &mut IndexMap<String, Node>) -> IndexMap<&String, &mut Node> {
-    nodes
-        .iter_mut()
-        .filter(|(_, n)| match n.node_type {
-            NodeType::Guest(_) => true,
-            _ => false,
-        })
-        .collect()
-}
-
-#[allow(unused)]
 pub fn filter_guests(nodes: &IndexMap<String, Node>) -> IndexMap<&String, &Node> {
     nodes
         .iter()
@@ -22,17 +11,6 @@ pub fn filter_guests(nodes: &IndexMap<String, Node>) -> IndexMap<&String, &Node>
         })
         .collect()
 }
-
-pub fn filter_routers_mut(nodes: &mut IndexMap<String, Node>) -> IndexMap<&String, &mut Node> {
-    nodes
-        .iter_mut()
-        .filter(|(_, n)| match n.node_type {
-            NodeType::Router(_) => true,
-            _ => false,
-        })
-        .collect()
-}
-
 
 pub fn filter_routers(nodes: &IndexMap<String, Node>) -> IndexMap<&String, &Node> {
     nodes

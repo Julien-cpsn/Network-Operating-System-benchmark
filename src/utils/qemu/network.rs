@@ -11,12 +11,12 @@
 //! offloads to the guests: frames on a link stay MTU-sized, like on a wire and like with `Udp`.
 
 use std::fs::{self, OpenOptions};
-use std::process::{exit, Command};
+use std::process::{Command};
 use std::sync::RwLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 use anyhow::{anyhow, bail, Context};
 use strum::Display;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 use crate::QEMU_ENABLE_KVM;
 
 const TARGET: &str = "network";

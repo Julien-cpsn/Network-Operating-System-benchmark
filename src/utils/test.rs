@@ -5,9 +5,47 @@ use std::fs;
 use std::path::PathBuf;
 use tracing::{error, info};
 use walkdir::{DirEntry, WalkDir};
+use crate::models::nodes::node::DistantNetwork;
 use crate::models::os_command::OsCommand;
+use crate::utils::os_commands::guest::GUEST_INPUT_READY;
 
 const TARGET: &str = "test";
+
+
+pub async fn network_test_task(
+    experiment_run_path: PathBuf,
+    guest_name: String,
+    console_host: String,
+    console: u16,
+    distant_networks: Vec<DistantNetwork>
+) {
+    info!(target: TARGET, "Running network test from {}", &guest_name);
+
+    let mut network_test_commands = vec![];
+
+    for distant_network in distant_networks {
+        network_test_commands.push(OsCommand::new_text(GUEST_INPUT_READY, format!("ping -c 10 {}", distant_network.target_ip), true, false));
+    }
+
+    network_test_commands.push(OsCommand::new_line(GUEST_INPUT_READY));
+    network_test_commands.push(OsCommand::new_line(GUEST_INPUT_READY));
+
+    dbg!(&network_test_commands);
+
+    if let Err(err) = execute_commands(
+        &experiment_run_path,
+        &guest_name,
+        &console_host,
+        console,
+        network_test_commands,
+        Some(20_000),
+        None
+    ) {
+        error!(target: TARGET, "{:?}", err);
+    }
+
+    info!(target: TARGET, "End network test from {}", &guest_name);
+}
 
 pub async fn test_task(
     experiment_run_path: PathBuf,

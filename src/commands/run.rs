@@ -46,8 +46,8 @@ use crate::utils::os_commands::routing::ospf_config::router_configure_ospf_comma
 use crate::utils::os_commands::routing::rip_config::router_configure_rip_commands;
 use crate::utils::os_commands::routing::static_route::router_configure_static_commands;
 use crate::utils::route::generate_distant_network_from_test;
-use crate::utils::test::{clear_shared_dir, harvest_results, test_task};
-use crate::utils::utils::filter_routers;
+use crate::utils::test::{clear_shared_dir, harvest_results, network_test_task, test_task};
+use crate::utils::utils::{filter_guests, filter_routers};
 
 pub const INTER_XP_WAIT: u64 = 1;
 pub const INTRA_XP_WAIT: u64 = 60;
@@ -231,17 +231,17 @@ pub async fn run_experiment(
 
     for test in &experiment.test_batch {
         let to_node = experiment.network.nodes.get(&test.to).ok_or_else(|| anyhow!("Node \"{}\" not found in test {}", &test.to, &test.name))?;
-        let to_node_network = to_node.unwrap_guest().ip.network();
+        let to_node_ip = to_node.unwrap_guest().ip;
 
         let from_node = experiment.network.nodes.get(&test.from).ok_or_else(|| anyhow!("Node \"{}\" not found in test {}", test.from, &test.name))?;
-        let from_node_network = from_node.unwrap_guest().ip.network();
+        let from_node_ip = from_node.unwrap_guest().ip;
 
         if matches!(from_node.node_type, NodeType::Router(..)) || matches!(to_node.node_type, NodeType::Router(..)) {
             return Err(anyhow!("Cannot test from/to router nodes, only guests"))
         }
         
-        generate_distant_network_from_test(&test.from, experiment.network.nodes.get_mut(&test.from).unwrap(), to_node_network, from_node_network)?;
-        generate_distant_network_from_test(&test.to, experiment.network.nodes.get_mut(&test.to).unwrap(), from_node_network, to_node_network)?;
+        generate_distant_network_from_test(&test.from, experiment.network.nodes.get_mut(&test.from).unwrap(), to_node_ip, from_node_ip.network())?;
+        generate_distant_network_from_test(&test.to, experiment.network.nodes.get_mut(&test.to).unwrap(), from_node_ip, to_node_ip.network())?;
     }
 
     /* START */
@@ -432,6 +432,29 @@ pub async fn run_experiment(
             Some(5_000),
             None
         )?;
+    }
+
+    /* NETWORK TEST */
+
+    for (guest_name, node) in filter_guests(&experiment.network.nodes) {
+        if node.distant_networks.is_empty() {
+            continue;
+        }
+
+        let experiment_run_path = experiment_run_path.clone();
+        let guest_name = guest_name.clone();
+        let vm = node.vm.as_ref().unwrap();
+        let console_host = vm.console_host.clone();
+        let console_port = vm.console_port;
+        let distant_networks = node.distant_networks.clone();
+
+        tokio::task::spawn(network_test_task(
+            experiment_run_path,
+            guest_name,
+            console_host,
+            console_port,
+            distant_networks
+        ));
     }
 
     /* MONITOR ROUTER */
