@@ -40,7 +40,10 @@ if [ ! -w /dev/vhost-net ]; then
         sudo chmod o+rw /dev/vhost-net
 fi
 
-echo 0 | sudo tee /sys/module/kvm/parameters/halt_poll_ns
+echo off | sudo tee /sys/devices/system/cpu/smt/control
+sudo cpupower frequency-set -g performance
+sudo cpupower idle-set -D 2
+
 echo 0 | sudo tee /sys/kernel/mm/ksm/run
 
 cd "/home/${USER}/survey/Network-Operating-System-benchmark"
