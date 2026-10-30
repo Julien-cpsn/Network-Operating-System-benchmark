@@ -9,7 +9,7 @@ use indexmap::IndexMap;
 use serde_json::{json, Value};
 use tokio::time::sleep;
 use tracing::{error, info, warn};
-use crate::args::g5k::DeployG5kCommand;
+use crate::args::g5k::{DeployG5kCommand, G5kLogin};
 use crate::args::run::RunCommand;
 use crate::commands::g5k::utils::{connect_to_ssh, ensure_identifier, scp_upload, ssh_exec, G5K_API_URL, G5K_ACCESS_HOST};
 use crate::GUEST_IMAGE_PATH;
@@ -93,7 +93,7 @@ pub async fn deploy_g5k(command: DeployG5kCommand) -> anyhow::Result<()> {
     let password = rpassword::prompt_password("Grid5000 password: ")?;
     println!();
 
-    prepare_site_machine(&command.login.user, &command.login.site, &command.experiment_name, &command.experiment_commands, &operating_systems_to_use)?;
+    prepare_site_machine(&command.login, &command.experiment_name, &command.experiment_commands, &operating_systems_to_use)?;
     let job_id = submit_job(&command, &password).await?;
 
     info!(target: TARGET, "Results will be available at: https://api.grid5000.fr/stable/sites/{}/public/{}/", &command.login.site,  &command.login.user);
@@ -113,9 +113,9 @@ pub async fn deploy_g5k(command: DeployG5kCommand) -> anyhow::Result<()> {
 
 // ---------------------------------------------------------------- SSH
 
-fn prepare_site_machine(user: &str, site: &str, experiment_name: &String, experiment_commands: &PathBuf, operating_systems_to_use: &IndexMap<String, OperatingSystem>) -> anyhow::Result<()> {
+fn prepare_site_machine(login: &G5kLogin, experiment_name: &String, experiment_commands: &PathBuf, operating_systems_to_use: &IndexMap<String, OperatingSystem>) -> anyhow::Result<()> {
     info!(target: TARGET, "Connecting to Grid'5000 SSH ({})", G5K_ACCESS_HOST);
-    let session = connect_to_ssh(user)?;
+    let session = connect_to_ssh(&login)?;
     info!(target: TARGET, "SSH connected successfully");
 
     let guest_image_path = GUEST_IMAGE_PATH.get().unwrap();
@@ -124,7 +124,7 @@ fn prepare_site_machine(user: &str, site: &str, experiment_name: &String, experi
         error!(target: TARGET, "Guest image path does not exist");
     }
 
-    let guest_dir = format!("{}/survey/vm/Debian", site);
+    let guest_dir = "survey/vm/Debian";
     let command = format!("mkdir -p -- ~/{guest_dir}");
     info!(target: TARGET, "> {command}");
     ssh_exec(&session, &command)?;
@@ -134,7 +134,7 @@ fn prepare_site_machine(user: &str, site: &str, experiment_name: &String, experi
     info!(target: TARGET, "Guest OS uploaded");
 
     for (os_name, os) in operating_systems_to_use {
-        let remote_os_dir = format!("{}/survey/vm/{}", site, os_name);
+        let remote_os_dir = format!("survey/vm/{}", os_name);
 
         let command = format!("mkdir -p -- ~/{remote_os_dir}");
         info!(target: TARGET, "> {command}");
@@ -153,11 +153,11 @@ fn prepare_site_machine(user: &str, site: &str, experiment_name: &String, experi
     info!(target: TARGET, "All images uploaded");
 
     info!(target: TARGET, "Uploading the commands to Grid'5000");
-    scp_upload(&session, &experiment_commands, &format!("{site}/survey/Network-Operating-System-benchmark/run_experiment.sh"), 0o774, true)?;
+    scp_upload(&session, &experiment_commands, "survey/Network-Operating-System-benchmark/run_experiment.sh", 0o774, true)?;
     info!(target: TARGET, "Commands uploaded as \"run_experiment.sh\"");
 
     info!(target: TARGET, "Uploading run_benchmark_g5k.sh to Grid'5000");
-    scp_upload(&session, &env::current_dir()?.as_path().join("run_benchmark_g5k.sh"), &format!("{site}/run_benchmark_g5k.sh"), 0o774, true)?;
+    scp_upload(&session, &env::current_dir()?.as_path().join("run_benchmark_g5k.sh"), "run_benchmark_g5k.sh", 0o774, true)?;
     info!(target: TARGET, "run_benchmark_g5k.sh uploaded");
 
     let command = format!("rm ~/{}", experiment_stdout_file(&experiment_name));
@@ -226,7 +226,7 @@ async fn submit_job(command: &DeployG5kCommand, password: &str) -> anyhow::Resul
 }
 
 async fn wait_for_job(command: &DeployG5kCommand, password: &str, job_id: u64) -> anyhow::Result<()> {
-    let session = connect_to_ssh(&command.login.user)?;
+    let session = connect_to_ssh(&command.login)?;
 
     let client = reqwest::Client::new();
     let job_url = format!("{G5K_API_URL}/sites/{}/jobs/{job_id}", command.login.site);
@@ -262,7 +262,7 @@ async fn wait_for_job(command: &DeployG5kCommand, password: &str, job_id: u64) -
             "running" => {
                 print!("\x1B[2J\x1B[1;1H");
                 info!(target: TARGET, "Job {job_id} state: {state}");
-                let output = ssh_exec(&session, &format!("cat ~/{}/{}", &command.login.site, experiment_stdout_file(&command.experiment_name)))?;
+                let output = ssh_exec(&session, &format!("cat ~/{}", experiment_stdout_file(&command.experiment_name)))?;
                 let lines = output.split('\n').collect::<Vec<&str>>();
                 let max = min(lines.len(), 15);
                 println!("========================================\n\n{}", &lines[lines.len() - max..].join("\n"));
@@ -273,7 +273,7 @@ async fn wait_for_job(command: &DeployG5kCommand, password: &str, job_id: u64) -
                 return Ok(())
             },
             "error" => {
-                let output = ssh_exec(&session, &format!("cat ~/{}/{}", &command.login.site, experiment_stderr_file(&command.experiment_name, job_id)))?;
+                let output = ssh_exec(&session, &format!("cat ~/{}", experiment_stderr_file(&command.experiment_name, job_id)))?;
                 let lines = output.split('\n').collect::<Vec<&str>>();
                 let max = min(lines.len(), 15);
                 bail!("Job {job_id} ended in error:\n\n{}", &lines[lines.len() - max..].join("\n"))

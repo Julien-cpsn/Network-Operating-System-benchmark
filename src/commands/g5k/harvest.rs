@@ -17,7 +17,7 @@ pub async fn harvest_g5k(command: HarvestG5kCommand) -> anyhow::Result<()> {
     let local_root = env::current_dir()?.join("experimentation").join("results");
 
     info!(target: TARGET, "Connecting to Grid'5000 SSH");
-    let session = connect_to_ssh(&command.login.user)?;
+    let session = connect_to_ssh(&command.login)?;
 
 
     let list_command = format!(r#"if [ -d "{site}/public/results" ]; then find "{site}/public/results" -mindepth 1 -maxdepth 1 -type d -print0; else exit 0; fi"#);
