@@ -51,7 +51,7 @@ use crate::utils::test::{clear_shared_dir, harvest_results, network_test_task, t
 use crate::utils::utils::{filter_routers};
 
 pub const INTER_XP_WAIT: u64 = 1;
-pub const INTRA_XP_WAIT_ESTIMATION: u64 = 90;
+pub const XP_INTER_NODE_CONNECTION_WAIT_ESTIMATION: u64 = 6;
 pub const POST_XP_WAIT: u64 = 10;
 
 pub async fn run(run_command: RunCommand) -> anyhow::Result<()> {
@@ -506,6 +506,7 @@ pub async fn run_experiment(
         network_test_task(
             experiment_run_path,
             &test.from,
+            &test.to,
             &from_node_vm.console_host,
             from_node_vm.console_port,
             to_node_ip.address()

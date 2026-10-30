@@ -14,27 +14,29 @@ const TARGET: &str = "test";
 
 pub fn network_test_task(
     experiment_run_path: &PathBuf,
-    guest_name: &str,
+    from_guest_name: &str,
+    to_guest_name: &str,
     console_host: &str,
     console: u16,
     distant_ip: Ipv4Addr
 ) {
-    info!(target: TARGET, "Running network test from {}", &guest_name);
+    info!(target: TARGET, "Running network test from {} to {}", &from_guest_name, &to_guest_name);
 
     let mut network_test_commands = vec![];
 
-    network_test_commands.push(OsCommand::new_text(GUEST_INPUT_READY, format!(r#"printf '%s' 'waiting for {ip:}\n'
-while ! timeout 1.0 ping -c 1 -n {ip:} &> /dev/null
+    network_test_commands.push(OsCommand::new_text(GUEST_INPUT_READY, format!("printf '%s\n' 'waiting for {distant_ip}'"), true, false));
+    network_test_commands.push(OsCommand::new_text(GUEST_INPUT_READY, format!(r#"while ! timeout 1.0 ping -c 1 -n {distant_ip} &> /dev/null
 do
     printf '%c' '.'
 done
-printf '\n%s\n'  'Server is online'"#, ip = distant_ip), true, false));
+printf '\n%s\n'  'Server is online'"#), true, false));
+    network_test_commands.push(OsCommand::new_text(GUEST_INPUT_READY, "printf '\n%s\n'  'Server is back online'", true, false));
     network_test_commands.push(OsCommand::new_line(GUEST_INPUT_READY));
     network_test_commands.push(OsCommand::new_line(GUEST_INPUT_READY));
-    
+
     if let Err(err) = execute_commands(
         &experiment_run_path,
-        &guest_name,
+        &from_guest_name,
         &console_host,
         console,
         network_test_commands,
@@ -44,7 +46,7 @@ printf '\n%s\n'  'Server is online'"#, ip = distant_ip), true, false));
         error!(target: TARGET, "{:?}", err);
     }
 
-    info!(target: TARGET, "End network test from {}", &guest_name);
+    info!(target: TARGET, "Connection established between {} and {}", &from_guest_name, &to_guest_name);
 }
 
 pub async fn test_task(
