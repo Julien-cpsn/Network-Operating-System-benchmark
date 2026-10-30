@@ -7,7 +7,7 @@ use indexmap::IndexMap;
 use tracing::{error, info, warn};
 use strum::VariantArray;
 use crate::args::generate::{GenerateCommand, GenerateSubcommand};
-use crate::commands::run::{INTER_XP_WAIT, INTRA_XP_WAIT_ESTIMATION, POST_XP_WAIT};
+use crate::commands::run::{INTER_XP_WAIT, XP_INTER_NODE_CONNECTION_WAIT_ESTIMATION, POST_XP_WAIT};
 use crate::models::experiment::Experiment;
 use crate::models::hardware_resources::HardwareResources;
 use crate::models::network::Network;
@@ -67,16 +67,18 @@ pub fn generate(generate_command: GenerateCommand) -> anyhow::Result<()> {
     }
 
     let override_ = match &generate_command.command {
-        GenerateSubcommand::Files { override_, .. } => *override_,
+        GenerateSubcommand::Files { override_, .. } => {
+            if override_ == &true {
+                warn!(target: TARGET, "Override is set, existing experiment will be overwritten");
+            }
+            else {
+                warn!(target: TARGET, "Override is not set, existing experiment will NOT be overwritten");
+            }
+
+            *override_
+        },
         _ => false
     };
-
-    if override_ == true {
-        warn!(target: TARGET, "Override is set, existing experiment will be overwritten");
-    }
-    else {
-        warn!(target: TARGET, "Override is not set, existing experiment will NOT be overwritten");
-    }
 
     if let GenerateSubcommand::Commands { experiment_selection, runs } = &generate_command.command {
         println!("# cargo run -- generate commands {}", experiment_selection_args_to_string(&experiment_selection, *runs));
@@ -193,7 +195,13 @@ pub fn generate(generate_command: GenerateCommand) -> anyhow::Result<()> {
                                     GenerateSubcommand::Commands { runs, .. } => *runs
                                 };
 
-                                os_xp_seconds += (180 * 1 + INTRA_XP_WAIT_ESTIMATION as usize + longest_xp as usize + POST_XP_WAIT as usize + INTER_XP_WAIT as usize) * runs as usize;
+                                os_xp_seconds += (
+                                    180 * 1
+                                    + XP_INTER_NODE_CONNECTION_WAIT_ESTIMATION as usize * topology.network.nodes.len()
+                                    + longest_xp as usize
+                                    + POST_XP_WAIT as usize
+                                    + INTER_XP_WAIT as usize
+                                ) * runs as usize;
 
                                 match &generate_command.command {
                                     GenerateSubcommand::Run(_) | GenerateSubcommand::Files { .. } => {
@@ -329,7 +337,7 @@ pub fn generate(generate_command: GenerateCommand) -> anyhow::Result<()> {
         let minutes = os_xp_seconds / 60;
         let hours = minutes / 60;
         let days = hours / 24;
-        info!(target: TARGET, "Estimated total experiment duration for {} is {:0>3}:{:0>2}:{:0>2}:{:0>2} (D:H:M:S)", os_name, days, hours % 24, minutes % 60, os_xp_seconds % 60);
+        info!(target: TARGET, "Max total experiment duration for {} is {:0>3}:{:0>2}:{:0>2}:{:0>2} (D:H:M:S)", os_name, days, hours % 24, minutes % 60, os_xp_seconds % 60);
     }
 
     if matches!(&generate_command.command, GenerateSubcommand::Commands { .. }) {
@@ -342,7 +350,7 @@ pub fn generate(generate_command: GenerateCommand) -> anyhow::Result<()> {
     let minutes = total_xp_seconds / 60;
     let hours = minutes / 60;
     let days = hours / 24;
-    info!(target: TARGET, "Estimated total experiment duration is {:0>3}:{:0>2}:{:0>2}:{:0>2} (D:H:M:S)", days, hours % 24, minutes % 60, total_xp_seconds % 60);
+    info!(target: TARGET, "Max total experiment duration is {:0>3}:{:0>2}:{:0>2}:{:0>2} (D:H:M:S)", days, hours % 24, minutes % 60, total_xp_seconds % 60);
 
     Ok(())
 }
