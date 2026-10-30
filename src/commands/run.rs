@@ -474,7 +474,7 @@ pub async fn run_experiment(
     let mut monitor_threads = JoinSet::new();
 
     // Host side: every VM (routers, but also clients and servers, to locate bottlenecks)
-    let monitored_vms: Vec<MonitoredVm> = filter_routers(&experiment.network.nodes)
+    let monitored_vms: Vec<MonitoredVm> = experiment.network.nodes
         .values()
         .filter_map(|node| node.vm.as_ref().and_then(MonitoredVm::from_vm))
         .collect();
