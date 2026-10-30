@@ -35,13 +35,16 @@ virt-builder debian-13 \
 
 Then fill the `.env` file. You can use the `.env.example` as a starter. Only `GUEST_IMAGE_PATH` is required:
 
-| Variable           | Default               | Description                                                                     |
-|--------------------|-----------------------|---------------------------------------------------------------------------------|
-| `GUEST_IMAGE_PATH` |                       | Debian guest image created above                                                |
-| `QEMU_BINARY`      | `qemu-system-x86_64`  | QEMU system emulator                                                            |
-| `QEMU_IMG_BINARY`  | `qemu-img`            | Used to create the linked clones                                                |
-| `QEMU_WORK_DIR`    | `experimentation/vms` | VM disks, pidfiles, QEMU logs and command lines. Wiped before each experiment   |
-| `QEMU_ENABLE_KVM`  | `true`                | Without KVM, VMs are emulated and routers use `-cpu max` instead of `-cpu host` |
+| Variable             | Default               | Description                                                                                                             |
+|----------------------|-----------------------|-------------------------------------------------------------------------------------------------------------------------|
+| `GUEST_IMAGE_PATH`   |                       | Debian guest image created above                                                                                        |
+| `QEMU_BINARY`        | `qemu-system-x86_64`  | QEMU system emulator                                                                                                    |
+| `QEMU_IMG_BINARY`    | `qemu-img`            | Used to create the linked clones                                                                                        |
+| `QEMU_WORK_DIR`      | `experimentation/vms` | VM disks, pidfiles, QEMU logs and command lines. Wiped before each experiment                                           |
+| `QEMU_ENABLE_KVM`    | `true`                | Without KVM, VMs are emulated and routers use `-cpu max` instead of `-cpu host`                                         |
+| `QEMU_VHOST`         | `auto`                | `auto`: taps + vhost-net when possible, UDP tunnels otherwise; `on`: vhost or fail; `off`: UDP tunnels                  |
+| `QEMU_VIRTIO_QUEUES` | `auto`                | Queue pairs of VirtIO NICs: `auto` = one per vCPU, `off` = single queue, or a number                                    |
+| `QEMU_NUMA`          | `auto`                | `auto`: bind each VM to one NUMA node with `numactl` (placement in `run_*/numa_placement.csv`), `off`, or a node number |
 
 ### 2. Create an experiments
 

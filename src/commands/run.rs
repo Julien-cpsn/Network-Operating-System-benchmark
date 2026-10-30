@@ -30,7 +30,8 @@ use crate::utils::files::results_dir::RESULT_DIR_PATH;
 use crate::utils::files::routing_stacks::parse_routing_stack_list_file;
 use crate::utils::files::shared_dir::SHARED_DIR_PATH;
 use crate::utils::link::{create_link, link_failure};
-use crate::utils::qemu::host_monitor::{host_monitor_task, MonitoredVm};
+use crate::utils::qemu::host_monitor::{host_monitor_task, MonitoredVm, HOST_RESOURCES_DIR_NAME};
+use crate::utils::qemu::numa::place_vms;
 use crate::utils::qemu::image::resolve_images;
 use crate::utils::qemu::ports::reset_port_allocator;
 use crate::utils::qemu::network::{delete_all_taps, link_backend};
@@ -110,7 +111,7 @@ pub async fn run(run_command: RunCommand) -> anyhow::Result<()> {
         for run_index in 1..nb_runs + 1 {
             let experiment_run_path = experiment_path.join(format!("run_{run_index}"));
 
-            fs::create_dir_all(&experiment_run_path)?;
+            fs::create_dir_all(&experiment_run_path.join(HOST_RESOURCES_DIR_NAME))?;
 
             find_and_delete_experiment_log_file(&experiment_run_path)?;
 
@@ -242,6 +243,16 @@ pub async fn run_experiment(
         
         generate_distant_network_from_test(&test.from, experiment.network.nodes.get_mut(&test.from).unwrap(), to_node_ip, from_node_ip.network())?;
         generate_distant_network_from_test(&test.to, experiment.network.nodes.get_mut(&test.to).unwrap(), from_node_ip, to_node_ip.network())?;
+    }
+
+    // Each VM on one NUMA node (threads + memory), see QEMU_NUMA
+    {
+        let mut vms: Vec<(&str, &mut QemuVm)> = experiment.network.nodes
+            .iter_mut()
+            .filter_map(|(node_name, node)| node.vm.as_mut().map(|vm| (node_name.as_str(), vm)))
+            .collect();
+
+        place_vms(&mut vms, &experiment_run_path)?;
     }
 
     /* START */

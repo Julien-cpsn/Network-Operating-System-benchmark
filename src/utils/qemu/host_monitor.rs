@@ -12,6 +12,8 @@
 //! CPU percentages are normalised to the VM's vCPU capacity (100 % = all its vCPUs fully busy),
 //! except `busiest_thread_pct`, which is the busiest single thread in % of ONE core: around
 //! 100 %, that thread is the bottleneck even when the averages look fine.
+//! `busy_vhost_threads` counts the vhost workers busy at least 10 % of the interval: with multiqueue
+//! VirtIO NICs (one worker per queue pair), it shows how many queue pairs the guest actually uses.
 //!
 //! Packet rates come from the VM's taps (`/sys/class/net/<tap>/statistics`): a tap's rx is the
 //! VM's tx. `drop_pps` counts the packets the host could not hand to the VM (tap `tx_dropped`),
@@ -52,7 +54,7 @@ pub const COL_GUEST_PCT: &str = "guest_pct";
 /// Resident anonymous memory of the QEMU process (pages of the guest touched at least once)
 pub const COL_RSS_ANON_MIB: &str = "rss_anon_mib";
 
-const HEADER: [&str; 14] = [
+const HEADER: [&str; 15] = [
     COL_TIMESTAMP,
     "vcpu",
     COL_GUEST_PCT,
@@ -67,9 +69,12 @@ const HEADER: [&str; 14] = [
     "ns_per_packet",
     "busiest_thread_pct",
     "busiest_thread",
+    "busy_vhost_threads",
 ];
 
 const SAMPLING_INTERVAL: Duration = Duration::from_secs(1);
+/// A vhost worker running at least this share of the interval counts in `busy_vhost_threads`
+const BUSY_VHOST_SHARE: f64 = 0.10;
 /// Below this rate, `ns_per_packet` is left empty
 const MIN_PPS_FOR_COST: f64 = 1000.0;
 /// Field of `/proc/<pid>/stat` holding `guest_time`, counted from 1 (see proc(5))
@@ -143,6 +148,8 @@ struct CpuDelta {
     nb_vcpu: u32,
     busiest_ns: u64,
     busiest_thread: String,
+    /// Runtime of each vhost worker during the interval
+    vhost_runtimes_ns: Vec<u64>,
 }
 
 impl CpuDelta {
@@ -158,7 +165,10 @@ impl CpuDelta {
                 self.guest_ticks += times.guest_ticks.saturating_sub(before.guest_ticks);
                 self.nb_vcpu += 1;
             },
-            ThreadKind::Vhost => self.vhost_ns += runtime,
+            ThreadKind::Vhost => {
+                self.vhost_ns += runtime;
+                self.vhost_runtimes_ns.push(runtime);
+            },
             ThreadKind::Qemu => self.qemu_ns += runtime,
         }
 
@@ -193,6 +203,8 @@ struct HostRow {
     ns_per_packet: Option<f64>,
     busiest_thread_pct: f64,
     busiest_thread: String,
+    /// vhost workers doing real work: with multiqueue VirtIO NICs, shows how many queue pairs the guest uses
+    busy_vhost_threads: u32,
 }
 
 impl HostRow {
@@ -222,6 +234,7 @@ impl HostRow {
             ns_per_packet: (vm_tx_pps >= MIN_PPS_FOR_COST).then(|| total_ns / packets.from_vm as f64),
             busiest_thread_pct: 100.0 * cpu.busiest_ns as f64 / elapsed_ns,
             busiest_thread: if cpu.busiest_thread.is_empty() { String::from("-") } else { cpu.busiest_thread.clone() },
+            busy_vhost_threads: cpu.vhost_runtimes_ns.iter().filter(|&&ns| ns as f64 >= BUSY_VHOST_SHARE * elapsed_ns).count() as u32,
         }
     }
 
@@ -243,6 +256,7 @@ impl HostRow {
             optional(self.ns_per_packet, 0),
             format!("{:.2}", self.busiest_thread_pct),
             self.busiest_thread.clone(),
+            self.busy_vhost_threads.to_string(),
         ]
     }
 }
@@ -415,7 +429,6 @@ pub fn host_monitor_task(experiment_run_path: PathBuf, vms: Vec<MonitoredVm>, st
     }
 
     let output_dir = experiment_run_path.join(HOST_RESOURCES_DIR_NAME);
-    fs::create_dir_all(&output_dir).with_context(|| format!("cannot create {}", output_dir.display()))?;
 
     let clock_ticks_per_s = clock_ticks_per_second();
     let mut monitors = vms
@@ -524,6 +537,8 @@ mod tests {
             nb_vcpu: 2,
             busiest_ns: 800_000_000,
             busiest_thread: String::from("vhost-1"),
+            // 3 workers: two busy (>= 10 % of 1 s), one almost idle
+            vhost_runtimes_ns: vec![450_000_000, 140_000_000, 10_000_000],
         };
         let packets = PacketCounters { from_vm: 1_000_000, to_vm: 999_000, dropped_to_vm: 10 };
 
@@ -536,6 +551,7 @@ mod tests {
         assert_eq!(row.rss_anon_mib, Some(2.0));
         assert_eq!(row.ns_per_packet, Some(2_000.0));
         assert!((row.busiest_thread_pct - 80.0).abs() < 1e-9);
+        assert_eq!(row.busy_vhost_threads, 2);
     }
 
     #[test]

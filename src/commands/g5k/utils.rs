@@ -131,20 +131,22 @@ pub fn ssh_exec(session: &Session, command: &str) -> anyhow::Result<String> {
     Ok(stdout)
 }
 
-pub fn scp_upload(session: &Session, local_path: &Path, remote_path: &str, permissions: i32) -> anyhow::Result<()> {
-    let local_size = std::fs::metadata(local_path)
+pub fn scp_upload(session: &Session, local_path: &Path, remote_path: &str, permissions: i32, always_overwrite: bool) -> anyhow::Result<()> {
+    let local_size = fs::metadata(local_path)
         .with_context(|| format!("Could not read \"{}\"", local_path.display()))?
         .len();
 
-    match remote_file_size(session, remote_path)? {
-        Some(remote_size) if remote_size == local_size => {
-            info!(target: TARGET, "\"~/{remote_path}\" already exists ({} KiB), skipping upload", local_size / 1024);
-            return Ok(());
-        },
-        Some(remote_size) => {
-            warn!(target: TARGET, "\"~/{remote_path}\" exists but its size differs (remote {remote_size} B, local {local_size} B), uploading again");
-        },
-        None => {}
+    if !always_overwrite {
+        match remote_file_size(session, remote_path)? {
+            Some(remote_size) if remote_size == local_size => {
+                info!(target: TARGET, "\"~/{remote_path}\" already exists ({} KiB), skipping upload", local_size / 1024);
+                return Ok(());
+            },
+            Some(remote_size) => {
+                warn!(target: TARGET, "\"~/{remote_path}\" exists but its size differs (remote {remote_size} B, local {local_size} B), uploading again");
+            },
+            None => {}
+        }
     }
 
     let mut file = File::open(local_path).with_context(|| format!("Could not open \"{}\"", local_path.display()))?;

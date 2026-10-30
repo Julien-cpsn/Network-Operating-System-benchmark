@@ -160,7 +160,7 @@ pub fn generate(generate_command: GenerateCommand) -> anyhow::Result<()> {
                                     }
                                 }
                                 None => match has_failures {
-                                    true => vec![true, false],
+                                    true => vec![false, true],
                                     false => vec![false]
                                 }
                             };

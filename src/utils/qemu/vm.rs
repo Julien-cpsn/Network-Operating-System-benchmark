@@ -12,7 +12,7 @@ use crate::models::nic::NicType;
 use crate::models::nodes::node::Node;
 use crate::utils::files::shared_dir::SHARED_DIR_PATH;
 use crate::utils::qemu::image::create_linked_clone;
-use crate::utils::qemu::network::{tap_vhost, link_backend, LinkBackend};
+use crate::utils::qemu::network::{tap_vhost, link_backend, virtio_queues, LinkBackend};
 use crate::utils::qemu::ports::allocate_tcp_port;
 use crate::utils::qemu::process::{is_qemu_alive, read_pid_file, terminate_qemu, wait_for_exit, PID_FILE_NAME};
 use crate::utils::qemu::qmp::qmp_execute;
@@ -35,8 +35,9 @@ pub enum DiskInterface {
 pub enum Connection {
     /// One end of a point-to-point UDP tunnel
     Udp { local_port: u16, remote_port: u16 },
-    /// A tap wired to the tap of the other end, with in-kernel vhost-net for VirtIO NICs
-    Tap { ifname: String, vhost: bool },
+    /// A tap wired to the tap of the other end, with in-kernel vhost-net for VirtIO NICs.
+    /// `queues` > 1: multiqueue VirtIO NIC, one vhost worker and one guest interrupt per queue pair.
+    Tap { ifname: String, vhost: bool, queues: u32 },
 }
 
 #[derive(Debug, Clone)]
@@ -63,6 +64,8 @@ pub struct QemuVm {
     pub console_host: String,
     pub console_port: u16,
     pub qmp_port: u16,
+    /// NUMA node the VM's threads and memory are bound to (see `numa.rs`), none: no binding
+    pub numa_node: Option<u32>,
     pub pid: Option<u32>,
 }
 
@@ -149,6 +152,7 @@ impl QemuVm {
             console_host: CONSOLE_HOST.to_string(),
             console_port: allocate_tcp_port()?,
             qmp_port: allocate_tcp_port()?,
+            numa_node: None,
             pid: None,
         };
 
@@ -190,7 +194,7 @@ impl QemuVm {
             .clone();
 
         if NicType::VirtIO == nic_type && link_backend() == LinkBackend::Udp {
-            error!(target: TARGET, "Vhost link is needed for the VirtIO NIC but the backend is unavailable because it was not setup");
+            error!(target: TARGET, "Vhost link is needed for the VirtIO NIC but the backend is unavailable because it was not setup or disabled");
             exit(1);
         }
 
@@ -225,14 +229,26 @@ impl QemuVm {
         self.attach(adapter, Connection::Udp { local_port, remote_port })
     }
 
-    /// Connects `adapter` to a tap. VirtIO NICs use vhost-net. Must be called before `start`.
-    pub fn attach_tap(&mut self, adapter: u32, ifname: String) -> anyhow::Result<()> {
-        let vhost = self.adapters
+    /// Number of queues `adapter` opens its tap with: see `QEMU_VIRTIO_QUEUES` for VirtIO NICs,
+    /// always 1 for the emulated NICs (e1000 and rtl8139 have a single queue)
+    pub fn tap_queues(&self, adapter: u32) -> anyhow::Result<u32> {
+        let vm_adapter = self.adapters
             .get(adapter as usize)
-            .is_some_and(|vm_adapter| vm_adapter.model == NicType::VirtIO)
-            && tap_vhost();
+            .ok_or_else(|| anyhow!("{} has no adapter {} (only {} adapters)", self.name, adapter, self.adapters.len()))?;
 
-        self.attach(adapter, Connection::Tap { ifname, vhost })
+        Ok(match vm_adapter.model {
+            NicType::VirtIO => virtio_queues().for_vcpu(self.vcpu),
+            NicType::E1000 | NicType::Rtl8139 => 1,
+        })
+    }
+
+    /// Connects `adapter` to a tap created with `tap_queues(adapter)` queues. VirtIO NICs use vhost-net.
+    /// Must be called before `start`.
+    pub fn attach_tap(&mut self, adapter: u32, ifname: String) -> anyhow::Result<()> {
+        let queues = self.tap_queues(adapter)?;
+        let vhost = self.adapters[adapter as usize].model == NicType::VirtIO && tap_vhost();
+
+        self.attach(adapter, Connection::Tap { ifname, vhost, queues })
     }
 
     fn attach(&mut self, adapter: u32, connection: Connection) -> anyhow::Result<()> {
@@ -300,12 +316,23 @@ impl QemuVm {
                     push(&["-netdev", &format!("socket,id={netdev},udp=127.0.0.1:{remote_port},localaddr=127.0.0.1:{local_port}")]);
                 },
                 // vnet_hdr=off: no checksum/TSO/GSO offload is exposed to the guest, frames stay MTU-sized
-                Some(Connection::Tap { ifname, vhost }) => {
+                Some(Connection::Tap { ifname, vhost, queues }) => {
                     let vhost = if *vhost { "on" } else { "off" };
-                    let additional_flags = if adapter.model == NicType::VirtIO { ",csum=off,gso=off,guest_tso4=off,guest_tso6=off,host_tso4=off,host_tso6=off" } else { "" };
+                    let mut device_flags = String::new();
+                    let mut netdev_flags = String::new();
 
-                    push(&["-device", &format!("{device},netdev={netdev}{additional_flags}")]);
-                    push(&["-netdev", &format!("tap,id={netdev},ifname={ifname},script=no,downscript=no,vnet_hdr=off,vhost={vhost}")]);
+                    if adapter.model == NicType::VirtIO {
+                        device_flags.push_str(",csum=off,gso=off,guest_tso4=off,guest_tso6=off,host_tso4=off,host_tso6=off");
+                    }
+
+                    if *queues > 1 {
+                        // One MSI-X vector per virtqueue (2 per queue pair) + config + control queue
+                        device_flags.push_str(&format!(",mq=on,vectors={}", 2 * queues + 2));
+                        netdev_flags.push_str(&format!(",queues={queues}"));
+                    }
+
+                    push(&["-device", &format!("{device},netdev={netdev}{device_flags}")]);
+                    push(&["-netdev", &format!("tap,id={netdev},ifname={ifname},script=no,downscript=no,vnet_hdr=off,vhost={vhost}{netdev_flags}")]);
                 },
                 // Not connected, like an unplugged cable
                 None => push(&["-device", &device]),
@@ -321,9 +348,20 @@ impl QemuVm {
 
     pub async fn start(&mut self) -> anyhow::Result<()> {
         let qemu_binary = QEMU_BINARY.get().unwrap();
-        let args = self.build_args();
+        let mut args = self.build_args();
 
-        let command_line = std::iter::once(qemu_binary.as_str())
+        // numactl binds the threads and the memory of QEMU; they stay bound after it daemonizes
+        let program = match self.numa_node {
+            Some(node) => {
+                let mut numactl_args = vec![format!("--cpunodebind={node}"), format!("--membind={node}"), qemu_binary.clone()];
+                numactl_args.append(&mut args);
+                args = numactl_args;
+                String::from("numactl")
+            },
+            None => qemu_binary.clone(),
+        };
+
+        let command_line = std::iter::once(program.as_str())
             .chain(args.iter().map(String::as_str))
             .map(shell_quote)
             .collect::<Vec<String>>()
@@ -334,13 +372,13 @@ impl QemuVm {
         fs::write(self.dir.join("qemu_command.sh"), format!("#!/bin/sh\n{command_line}\n"))?;
 
         // With -daemonize, the parent process only returns once the VM is initialized (or has failed)
-        let output = Command::new(qemu_binary)
+        let output = Command::new(&program)
             .args(&args)
             .current_dir(&self.dir)
             .stdin(Stdio::null())
             .output()
             .await
-            .with_context(|| format!("Could not run {qemu_binary}"))?;
+            .with_context(|| format!("Could not run {program}"))?;
 
         let mut log = output.stdout.clone();
         log.extend(&output.stderr);

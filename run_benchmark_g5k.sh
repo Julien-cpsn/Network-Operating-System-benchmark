@@ -17,7 +17,9 @@ sudo apt install -y \
     gnupg2 \
     telnet \
     iproute2 \
-    procps
+    procps \
+    numactl \
+    linux-cpupower
 
 # cargo lives in ~/.cargo/bin, which non-interactive job shells do not have in PATH
 if [ -f "/home/${USER}/.cargo/env" ]; then
@@ -40,8 +42,24 @@ if [ ! -w /dev/vhost-net ]; then
         sudo chmod o+rw /dev/vhost-net
 fi
 
-echo 0 | sudo tee /sys/module/kvm/parameters/halt_poll_ns
 echo 0 | sudo tee /sys/kernel/mm/ksm/run
+
+# Host tuning, see claude/testbed-findings-link-backend.md (halt_poll_ns is left at its default:
+# setting it to 0 slows down every guest wake-up)
+# - SMT off: removes the STIBP cost on every VM exit and gives each vCPU a whole core
+echo off | sudo tee /sys/devices/system/cpu/smt/control
+# - fixed frequency and no deep C-states: no wake-up latency on idle cores
+sudo cpupower frequency-set -g performance
+sudo cpupower idle-set -D 2
+# Recorded with the results
+{
+    uname -a
+    cat /proc/cmdline
+    grep . /sys/devices/system/cpu/vulnerabilities/*
+    echo "smt: $(cat /sys/devices/system/cpu/smt/control)"
+    echo "halt_poll_ns: $(cat /sys/module/kvm/parameters/halt_poll_ns)"
+    numactl --hardware
+} > host_config.txt 2>&1
 
 cd "/home/${USER}/survey/Network-Operating-System-benchmark"
 
@@ -57,5 +75,6 @@ if [ ! -d "/home/${USER}/public/results" ]; then
 fi
 
 cp -r "experimentation/results" "/home/${USER}/public/"
+cp host_config.txt "/home/${USER}/public/results/"
 
 echo DONE

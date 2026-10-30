@@ -9,6 +9,12 @@
 //!
 //! In both cases the taps are opened with `vnet_hdr=off`, so QEMU does not expose checksum/TSO/GSO
 //! offloads to the guests: frames on a link stay MTU-sized, like on a wire and like with `Udp`.
+//!
+//! VirtIO NICs are multiqueue (`QEMU_VIRTIO_QUEUES`, one queue pair per vCPU by default): each queue
+//! pair has its own vhost-net worker on the host and its own interrupt in the guest, so that a
+//! multi-vCPU router can spread its packets over its vCPUs instead of going through one vhost thread.
+//! The kernel refuses to open a tap whose multiqueue flag differs from the one it was created with,
+//! so each tap is created with `multi_queue` exactly when its VM opens it with more than one queue.
 
 use std::fs::{self, OpenOptions};
 use std::process::{Command};
@@ -55,6 +61,60 @@ pub enum LinkBackend {
     Udp,
     #[strum(to_string = "taps wired with tc, vhost-net for VirtIO NICs")]
     Tap,
+}
+
+/// Number of queue pairs of the VirtIO NICs
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum VirtioQueues {
+    /// One queue pair per vCPU of the VM
+    PerVcpu,
+    /// The same number for every VM (1 disables multiqueue)
+    Fixed(u32),
+}
+
+impl VirtioQueues {
+    /// Maximum supported by QEMU's virtio-net
+    const MAX: u32 = 1024;
+
+    pub fn parse(value: &str) -> anyhow::Result<VirtioQueues> {
+        match value.to_lowercase().as_str() {
+            "auto" | "vcpu" => Ok(VirtioQueues::PerVcpu),
+            "off" | "no" | "false" => Ok(VirtioQueues::Fixed(1)),
+            number => match number.parse::<u32>() {
+                Ok(queues) if (1..=Self::MAX).contains(&queues) => Ok(VirtioQueues::Fixed(queues)),
+                _ => bail!("QEMU_VIRTIO_QUEUES must be auto, off or a number between 1 and {}, got \"{value}\"", Self::MAX),
+            },
+        }
+    }
+
+    /// Queue pairs of a VirtIO NIC of a VM with `vcpu` vCPUs
+    pub fn for_vcpu(&self, vcpu: u32) -> u32 {
+        match self {
+            VirtioQueues::PerVcpu => vcpu.clamp(1, Self::MAX),
+            VirtioQueues::Fixed(queues) => *queues,
+        }
+    }
+}
+
+impl std::fmt::Display for VirtioQueues {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            VirtioQueues::PerVcpu => write!(f, "one queue pair per vCPU"),
+            VirtioQueues::Fixed(1) => write!(f, "1 queue pair (multiqueue off)"),
+            VirtioQueues::Fixed(queues) => write!(f, "{queues} queue pairs"),
+        }
+    }
+}
+
+static VIRTIO_QUEUES: RwLock<VirtioQueues> = RwLock::new(VirtioQueues::PerVcpu);
+
+pub fn virtio_queues() -> VirtioQueues {
+    *VIRTIO_QUEUES.read().unwrap()
+}
+
+pub fn set_virtio_queues(queues: VirtioQueues) {
+    info!(target: TARGET, "VirtIO NICs: {queues}");
+    *VIRTIO_QUEUES.write().unwrap() = queues;
 }
 
 static LINK_BACKEND: RwLock<LinkBackend> = RwLock::new(LinkBackend::Udp);
@@ -121,7 +181,7 @@ fn probe_tap_backend() -> Result<(), String> {
     let _ = delete_interface(PROBE_TAP);
 
     let probe = (|| -> anyhow::Result<()> {
-        create_tap(PROBE_TAP)?;
+        create_tap(PROBE_TAP, true)?;
         run_privileged("tc", &["qdisc", "add", "dev", PROBE_TAP, "ingress"])?;
         redirect(PROBE_TAP, PROBE_TAP)?;
         Ok(())
@@ -170,11 +230,17 @@ fn current_user() -> anyhow::Result<String> {
 }
 
 /// Persistent tap owned by the current user (so that an unprivileged QEMU can open it), up, without IPv6
-/// (otherwise the host would send router solicitations and MLD reports into the experiment)
-fn create_tap(name: &str) -> anyhow::Result<()> {
+/// (otherwise the host would send router solicitations and MLD reports into the experiment).
+/// `multi_queue` must match how QEMU opens it: with `queues` > 1, and only then.
+fn create_tap(name: &str, multi_queue: bool) -> anyhow::Result<()> {
     let user = current_user()?;
 
-    run_privileged("ip", &["tuntap", "add", "dev", name, "mode", "tap", "user", &user])?;
+    let mut args = vec!["tuntap", "add", "dev", name, "mode", "tap", "user", &user];
+    if multi_queue {
+        args.push("multi_queue");
+    }
+
+    run_privileged("ip", &args)?;
 
     if let Err(err) = run_privileged("sysctl", &["-q", "-w", &format!("net.ipv6.conf.{name}.disable_ipv6=1")]) {
         debug!(target: TARGET, "Could not disable IPv6 on {name} (IPv6 may be disabled on the host): {err}");
@@ -198,20 +264,21 @@ fn delete_interface(name: &str) -> anyhow::Result<()> {
     run_privileged("ip", &["link", "delete", "dev", name])
 }
 
-/// The two taps of physical link number `link_index`, wired to each other
-pub fn create_tap_pair(link_index: usize) -> anyhow::Result<(String, String)> {
+/// The two taps of physical link number `link_index`, wired to each other. `queues_a` and `queues_b`
+/// are the number of queues each VM opens its tap with.
+pub fn create_tap_pair(link_index: usize, queues_a: u32, queues_b: u32) -> anyhow::Result<(String, String)> {
     let tap_a = format!("{TAP_PREFIX}{link_index:04x}a");
     let tap_b = format!("{TAP_PREFIX}{link_index:04x}b");
 
-    for tap in [&tap_a, &tap_b] {
-        create_tap(tap)?;
+    for (tap, queues) in [(&tap_a, queues_a), (&tap_b, queues_b)] {
+        create_tap(tap, queues > 1)?;
         run_privileged("tc", &["qdisc", "add", "dev", tap, "ingress"])?;
     }
 
     redirect(&tap_a, &tap_b)?;
     redirect(&tap_b, &tap_a)?;
 
-    debug!(target: TARGET, "Created taps {tap_a} <-> {tap_b}");
+    debug!(target: TARGET, "Created taps {tap_a} ({queues_a} queues) <-> {tap_b} ({queues_b} queues)");
 
     Ok((tap_a, tap_b))
 }
