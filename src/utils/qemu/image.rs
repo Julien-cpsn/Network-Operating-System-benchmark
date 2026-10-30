@@ -4,6 +4,7 @@ use serde_json::Value;
 use tokio::process::Command;
 use tracing::debug;
 use crate::QEMU_IMG_BINARY;
+use crate::utils::files::dir::subtract_project_root;
 
 const TARGET: &str = "image";
 
@@ -60,10 +61,10 @@ pub async fn create_linked_clone(base_image: &Path, overlay: &Path) -> anyhow::R
         .context("Could not run qemu-img")?;
 
     if !output.status.success() {
-        bail!("qemu-img create failed for \"{}\": {}", overlay.display(), String::from_utf8_lossy(&output.stderr).trim());
+        bail!("qemu-img create failed for \"{}\": {}", subtract_project_root(&overlay.to_path_buf()), String::from_utf8_lossy(&output.stderr).trim());
     }
 
-    debug!(target: TARGET, "Linked clone {} -> {} ({})", overlay.display(), base_image.display(), base_format);
+    debug!(target: TARGET, "Linked clone {} -> {} ({})", subtract_project_root(&overlay.to_path_buf()), base_image.display(), base_format);
 
     Ok(())
 }

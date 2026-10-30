@@ -7,7 +7,7 @@ use indexmap::IndexMap;
 use tracing::{error, info, warn};
 use strum::VariantArray;
 use crate::args::generate::{GenerateCommand, GenerateSubcommand};
-use crate::commands::run::{INTRA_XP_WAIT, POST_XP_WAIT};
+use crate::commands::run::{INTER_XP_WAIT, INTRA_XP_WAIT_ESTIMATION, POST_XP_WAIT};
 use crate::models::experiment::Experiment;
 use crate::models::hardware_resources::HardwareResources;
 use crate::models::network::Network;
@@ -193,7 +193,7 @@ pub fn generate(generate_command: GenerateCommand) -> anyhow::Result<()> {
                                     GenerateSubcommand::Commands { runs, .. } => *runs
                                 };
 
-                                os_xp_seconds += (90 * 1 + INTRA_XP_WAIT as usize + longest_xp as usize + POST_XP_WAIT as usize + INTRA_XP_WAIT as usize) * runs as usize;
+                                os_xp_seconds += (180 * 1 + INTRA_XP_WAIT_ESTIMATION as usize + longest_xp as usize + POST_XP_WAIT as usize + INTER_XP_WAIT as usize) * runs as usize;
 
                                 match &generate_command.command {
                                     GenerateSubcommand::Run(_) | GenerateSubcommand::Files { .. } => {
@@ -228,7 +228,7 @@ pub fn generate(generate_command: GenerateCommand) -> anyhow::Result<()> {
                                     continue;
                                 }
 
-                                let mut router_id: u8 = 0;
+                                let mut router_id: u8 = 1;
 
                                 let mut nodes = IndexMap::new();
 

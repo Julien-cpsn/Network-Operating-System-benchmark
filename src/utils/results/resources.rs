@@ -163,6 +163,7 @@ pub fn write_resources_summaries(experiment_dir: &Path) -> anyhow::Result<Vec<Pa
 
     for run_dir in list_run_dirs(experiment_dir)? {
         let window = read_text_lossy(&run_dir.join(EXPERIMENT_LOG_NAME)).ok().and_then(|t| experiment_window(&t));
+
         let Some((start, end)) = window else {
             warn!(target: TARGET, "{}: no experiment start/end found, run ignored for resources", run_dir.display());
             continue;
@@ -391,6 +392,7 @@ fn list_files_with_extension(dir: &Path, extension: &str) -> anyhow::Result<Vec<
     let mut files: Vec<PathBuf> = fs::read_dir(dir)?
         .filter_map(|e| e.ok().map(|e| e.path()))
         .filter(|p| p.is_file() && p.extension().is_some_and(|e| e == extension))
+        .filter(|p| !p.ends_with("Client.csv") && !p.ends_with("Server.csv") && !p.ends_with("numa_placement.csv"))
         .collect();
     files.sort();
     Ok(files)

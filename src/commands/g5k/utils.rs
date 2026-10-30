@@ -1,20 +1,70 @@
 use std::{env, fs, io};
 use std::fs::File;
 use std::io::{Read, Write};
-use std::net::{TcpStream, ToSocketAddrs};
+use std::net::{TcpListener, TcpStream, ToSocketAddrs};
+use std::ops::Deref;
 use std::path::{Component, Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread::JoinHandle;
 use std::time::Duration;
 use anyhow::{anyhow, bail, Context};
-use ssh2::{CheckResult, KnownHostFileKind, Session};
+use ssh2::{Channel, CheckResult, KnownHostFileKind, Session};
 use tracing::{debug, info, warn};
+use crate::args::g5k::G5kLogin;
 
 const TARGET: &str = "g5k";
 
 pub const G5K_ACCESS_HOST: &str = "access.grid5000.fr";
 const G5K_ACCESS_PORT: u16 = 22;
+const G5K_FRONTEND_PORT: u16 = 22;
 pub const G5K_API_URL: &str = "https://api.grid5000.fr/stable";
 const SSH_TIMEOUT: Duration = Duration::from_secs(30);
 const UPLOAD_CHUNK_SIZE: usize = 256 * 1024;
+
+
+/// SSH session on a site frontend, reached through the access machine used as a jump host (like `ssh -J`).
+///
+/// `access.grid5000.fr` only forwards connections ("Local SSH sessions are not allowed on the national access"),
+/// so commands and SCP transfers must run on the frontend itself. Its home directory is the site home, so remote
+/// paths are relative to it (`survey/vm/...`, not `nancy/survey/vm/...`).
+///
+/// Dereferences to the underlying [`Session`], so it can be passed wherever a `&Session` is expected.
+pub struct G5kSession {
+    // Field order matters: the session must be dropped before the bridge it is talking through
+    session: Session,
+    _bridge: Bridge,
+}
+
+impl Deref for G5kSession {
+    type Target = Session;
+
+    fn deref(&self) -> &Session {
+        &self.session
+    }
+}
+
+impl Drop for G5kSession {
+    fn drop(&mut self) {
+        let _ = self.session.disconnect(None, "done", None);
+    }
+}
+
+/// Thread forwarding bytes between a local loopback socket and an SSH channel opened on the jump host
+struct Bridge {
+    stop: Arc<AtomicBool>,
+    handle: Option<JoinHandle<()>>,
+}
+
+impl Drop for Bridge {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+
+        if let Some(handle) = self.handle.take() {
+            let _ = handle.join();
+        }
+    }
+}
 
 pub fn ensure_identifier(what: &str, value: &str, allow_upper: bool) -> anyhow::Result<()> {
     let valid = !value.is_empty()
@@ -32,28 +82,6 @@ pub fn ensure_identifier(what: &str, value: &str, allow_upper: bool) -> anyhow::
     Ok(())
 }
 
-
-pub fn connect_to_ssh(user: &str) -> anyhow::Result<Session> {
-    let address = (G5K_ACCESS_HOST, G5K_ACCESS_PORT)
-        .to_socket_addrs()
-        .with_context(|| format!("Could not resolve {G5K_ACCESS_HOST}"))?
-        .next()
-        .ok_or_else(|| anyhow!("Could not resolve {G5K_ACCESS_HOST}"))?;
-
-    let tcp = TcpStream::connect_timeout(&address, SSH_TIMEOUT)
-        .with_context(|| format!("Could not connect to {G5K_ACCESS_HOST}"))?;
-
-    let mut session = Session::new()?;
-    session.set_tcp_stream(tcp);
-    session.set_timeout(SSH_TIMEOUT.as_millis() as u32);
-    session.handshake().context("SSH handshake failed")?;
-
-    check_host_key(&session)?;
-    authenticate(&session, user)?;
-
-    Ok(session)
-}
-
 fn home_dir() -> anyhow::Result<PathBuf> {
     env::var_os("HOME")
         .or_else(|| env::var_os("USERPROFILE"))
@@ -61,8 +89,138 @@ fn home_dir() -> anyhow::Result<PathBuf> {
         .ok_or_else(|| anyhow!("Could not find your home directory"))
 }
 
+pub fn connect_to_ssh(login: &G5kLogin) -> anyhow::Result<G5kSession> {
+    let frontend = format!("{}.grid5000.fr", &login.site);
+
+    // Names under which the frontend host key may be stored in `~/.ssh/known_hosts`
+    let known_names = [login.site.to_string(), frontend.clone(), format!("f{}.{}.grid5000.fr", &login.site, &login.site), format!("{}.g5k", &login.site)];
+
+    connect_through_jump_host(&login.user, G5K_ACCESS_HOST, G5K_ACCESS_PORT, &frontend, G5K_FRONTEND_PORT, &known_names)
+        .with_context(|| format!("Could not connect to the {} frontend through {G5K_ACCESS_HOST}", &login.site))
+}
+
+pub(crate) fn connect_through_jump_host(user: &str, jump_host: &str, jump_port: u16, target_host: &str, target_port: u16, target_known_names: &[String]) -> anyhow::Result<G5kSession> {
+    debug!(target: TARGET, "Connecting to the jump host {jump_host}");
+    let jump = connect_direct(user, jump_host, jump_port, &[jump_host.to_string()])?;
+
+    let channel = jump
+        .channel_direct_tcpip(target_host, target_port, None)
+        .with_context(|| format!("{jump_host} refused to open a connection to {target_host}:{target_port}"))?;
+
+    // The ssh2 crate cannot run a session over a channel, so the channel is exposed as a local loopback socket
+    let listener = TcpListener::bind(("127.0.0.1", 0))?;
+    let local = TcpStream::connect(listener.local_addr()?)?;
+
+    let stop = Arc::new(AtomicBool::new(false));
+    let handle = {
+        let stop = stop.clone();
+
+        std::thread::spawn(move || {
+            if let Ok((accepted, _)) = listener.accept() {
+                pump(jump, channel, accepted, &stop);
+            }
+        })
+    };
+    let bridge = Bridge { stop, handle: Some(handle) };
+
+    debug!(target: TARGET, "Connecting to {target_host} through {jump_host}");
+    let session = new_session(local)?;
+    check_host_key(&session, target_known_names, target_port)?;
+    authenticate(&session, user)?;
+
+    Ok(G5kSession { session, _bridge: bridge })
+}
+
+fn connect_direct(user: &str, host: &str, port: u16, known_names: &[String]) -> anyhow::Result<Session> {
+    let address = (host, port)
+        .to_socket_addrs()
+        .with_context(|| format!("Could not resolve {host}"))?
+        .next()
+        .ok_or_else(|| anyhow!("Could not resolve {host}"))?;
+
+    let tcp = TcpStream::connect_timeout(&address, SSH_TIMEOUT)
+        .with_context(|| format!("Could not connect to {host}"))?;
+
+    let session = new_session(tcp)?;
+
+    check_host_key(&session, known_names, port)?;
+    authenticate(&session, user)?;
+
+    Ok(session)
+}
+
+fn new_session(tcp: TcpStream) -> anyhow::Result<Session> {
+    let mut session = Session::new()?;
+    session.set_tcp_stream(tcp);
+    session.set_timeout(SSH_TIMEOUT.as_millis() as u32);
+    session.handshake().context("SSH handshake failed")?;
+
+    Ok(session)
+}
+
+/// Forwards bytes both ways between the loopback socket and the SSH channel until one side closes or `stop` is set
+fn pump(jump: Session, mut channel: Channel, mut local: TcpStream, stop: &AtomicBool) {
+    const BUFFER_SIZE: usize = 64 * 1024;
+
+    jump.set_blocking(false);
+    let _ = local.set_nonblocking(true);
+    let _ = local.set_nodelay(true);
+
+    let mut down = vec![0u8; BUFFER_SIZE]; // jump host -> local
+    let (mut down_pos, mut down_len) = (0, 0);
+    let mut up = vec![0u8; BUFFER_SIZE]; // local -> jump host
+    let (mut up_pos, mut up_len) = (0, 0);
+
+    let would_block = |error: &io::Error| error.kind() == io::ErrorKind::WouldBlock;
+
+    while !stop.load(Ordering::Relaxed) {
+        let mut progressed = false;
+
+        if down_pos == down_len {
+            match channel.read(&mut down) {
+                Ok(0) => break,
+                Ok(read) => { down_pos = 0; down_len = read; progressed = true; },
+                Err(error) if would_block(&error) => {},
+                Err(_) => break,
+            }
+        }
+
+        if down_pos < down_len {
+            match local.write(&down[down_pos..down_len]) {
+                Ok(written) => { down_pos += written; progressed |= written > 0; },
+                Err(error) if would_block(&error) => {},
+                Err(_) => break,
+            }
+        }
+
+        if up_pos == up_len {
+            match local.read(&mut up) {
+                Ok(0) => break,
+                Ok(read) => { up_pos = 0; up_len = read; progressed = true; },
+                Err(error) if would_block(&error) => {},
+                Err(_) => break,
+            }
+        }
+
+        if up_pos < up_len {
+            match channel.write(&up[up_pos..up_len]) {
+                Ok(written) => { up_pos += written; progressed |= written > 0; },
+                Err(error) if would_block(&error) => {},
+                Err(_) => break,
+            }
+        }
+
+        if !progressed {
+            std::thread::sleep(Duration::from_micros(200));
+        }
+    }
+
+    let _ = channel.close();
+}
+
 /// Verifies the server against `~/.ssh/known_hosts`, like OpenSSH does. Unknown hosts are rejected.
-fn check_host_key(session: &Session) -> anyhow::Result<()> {
+/// The host key is accepted if it is stored under any of `names`.
+fn check_host_key(session: &Session, names: &[String], port: u16) -> anyhow::Result<()> {
     let known_hosts_path = home_dir()?.join(".ssh").join("known_hosts");
 
     let mut known_hosts = session.known_hosts()?;
@@ -75,12 +233,23 @@ fn check_host_key(session: &Session) -> anyhow::Result<()> {
 
     let (key, _) = session.host_key().ok_or_else(|| anyhow!("The server did not present a host key"))?;
 
-    match known_hosts.check_port(G5K_ACCESS_HOST, G5K_ACCESS_PORT, key) {
-        CheckResult::Match => Ok(()),
-        CheckResult::Mismatch => bail!("The host key of {G5K_ACCESS_HOST} does not match \"{}\". Refusing to connect", known_hosts_path.display()),
-        CheckResult::NotFound => bail!("{G5K_ACCESS_HOST} is not in \"{}\". Run `ssh <user>@{G5K_ACCESS_HOST}` once to verify and add its host key", known_hosts_path.display()),
-        CheckResult::Failure => bail!("Could not verify the host key of {G5K_ACCESS_HOST}"),
+    let mut mismatch = false;
+
+    for name in names {
+        match known_hosts.check_port(name, port, key) {
+            CheckResult::Match => return Ok(()),
+            CheckResult::Mismatch => mismatch = true,
+            CheckResult::NotFound | CheckResult::Failure => {},
+        }
     }
+
+    let main_name = names.first().map(String::as_str).unwrap_or("the server");
+
+    if mismatch {
+        bail!("The host key of {main_name} does not match \"{}\". Refusing to connect", known_hosts_path.display());
+    }
+
+    bail!("{main_name} is not in \"{}\". Connect to it once with OpenSSH to verify and add its host key (ex: `ssh -J <user>@{G5K_ACCESS_HOST} <user>@{main_name}`)", known_hosts_path.display())
 }
 
 /// Tries the SSH agent first, then the default private keys

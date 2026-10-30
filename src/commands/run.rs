@@ -48,10 +48,10 @@ use crate::utils::os_commands::routing::rip_config::router_configure_rip_command
 use crate::utils::os_commands::routing::static_route::router_configure_static_commands;
 use crate::utils::route::generate_distant_network_from_test;
 use crate::utils::test::{clear_shared_dir, harvest_results, network_test_task, test_task};
-use crate::utils::utils::{filter_guests, filter_routers};
+use crate::utils::utils::{filter_routers};
 
 pub const INTER_XP_WAIT: u64 = 1;
-pub const INTRA_XP_WAIT: u64 = 60;
+pub const INTRA_XP_WAIT_ESTIMATION: u64 = 90;
 pub const POST_XP_WAIT: u64 = 10;
 
 pub async fn run(run_command: RunCommand) -> anyhow::Result<()> {
@@ -445,36 +445,13 @@ pub async fn run_experiment(
         )?;
     }
 
-    /* NETWORK TEST */
-
-    for (guest_name, node) in filter_guests(&experiment.network.nodes) {
-        if node.distant_networks.is_empty() {
-            continue;
-        }
-
-        let experiment_run_path = experiment_run_path.clone();
-        let guest_name = guest_name.clone();
-        let vm = node.vm.as_ref().unwrap();
-        let console_host = vm.console_host.clone();
-        let console_port = vm.console_port;
-        let distant_networks = node.distant_networks.clone();
-
-        tokio::task::spawn(network_test_task(
-            experiment_run_path,
-            guest_name,
-            console_host,
-            console_port,
-            distant_networks
-        ));
-    }
-
     /* MONITOR ROUTER */
 
     let stop_monitoring = Arc::new(AtomicBool::new(false));
     let mut monitor_threads = JoinSet::new();
 
     // Host side: every VM (routers, but also clients and servers, to locate bottlenecks)
-    let monitored_vms: Vec<MonitoredVm> = filter_routers(&experiment.network.nodes)
+    let monitored_vms: Vec<MonitoredVm> = experiment.network.nodes
         .values()
         .filter_map(|node| node.vm.as_ref().and_then(MonitoredVm::from_vm))
         .collect();
@@ -516,10 +493,23 @@ pub async fn run_experiment(
         }
     }
 
-    if !run_command.run_command.no_sleep {
-        info!(target: TARGET, "Waiting 1 minute");
-        // Sleep 1 min so that the network can discuss
-        sleep(Duration::from_secs(INTRA_XP_WAIT)).await;
+    /* NETWORK TEST */
+
+    for test in &experiment.test_batch {
+        let to_node = experiment.network.nodes.get(&test.to).ok_or_else(|| anyhow!("Node \"{}\" not found in test {}", &test.to, &test.name))?;
+        let to_node_ip = to_node.unwrap_guest().ip;
+
+        let from_node = experiment.network.nodes.get(&test.from).ok_or_else(|| anyhow!("Node \"{}\" not found in test {}", test.from, &test.name))?;
+        let from_node_vm = from_node.vm.as_ref().unwrap();
+
+
+        network_test_task(
+            experiment_run_path,
+            &test.from,
+            &from_node_vm.console_host,
+            from_node_vm.console_port,
+            to_node_ip.address()
+        );
     }
 
     /* FAILURE EVENTS */
