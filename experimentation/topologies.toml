@@ -11,14 +11,14 @@
     ]
 
     [Simple.network.nodes.Client]
-    vcpu = 2
+    vcpu = 8
     ram = 2048
     ip = "10.0.1.2/24"
     x = -200
     y = 0
 
     [Simple.network.nodes.Server]
-    vcpu = 2
+    vcpu = 8
     ram = 2048
     ip = "10.0.2.2/24"
     x = 200
@@ -64,14 +64,14 @@
     ]
 
     [Double.network.nodes.Client]
-    vcpu = 2
+    vcpu = 8
     ram = 2048
     ip = "10.0.1.2/24"
     x = -300
     y = 0
 
     [Double.network.nodes.Server]
-    vcpu = 2
+    vcpu = 8
     ram = 2048
     ip = "10.0.3.2/24"
     x = 300
@@ -181,14 +181,14 @@
     ]
 
     [Multi-operator.network.nodes.Client]
-    vcpu = 2
+    vcpu = 8
     ram = 2048
     ip = "10.0.1.2/24"
     x = -650
     y = 0
 
     [Multi-operator.network.nodes.Server]
-    vcpu = 2
+    vcpu = 8
     ram = 2048
     ip = "10.0.2.2/24"
     x = 650
@@ -1123,14 +1123,14 @@
     ]
 
     [Datacenter.network.nodes.Client]
-    vcpu = 2
+    vcpu = 8
     ram = 2048
     ip = "10.0.1.2/24"
     x = -300
     y = 200
 
     [Datacenter.network.nodes.Server]
-    vcpu = 2
+    vcpu = 8
     ram = 2048
     ip = "10.0.2.2/24"
     x = 300
