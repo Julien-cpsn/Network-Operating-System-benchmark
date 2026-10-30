@@ -36,7 +36,6 @@ pub struct DistantNetwork {
     pub network: Ipv4Cidr,
     pub gateway: Ipv4Addr,
     pub adapter_index: u32,
-    pub target_ip: Ipv4Addr,
 }
 
 impl Node {

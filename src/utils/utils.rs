@@ -2,15 +2,6 @@ use crate::models::nodes::node::{Node, NodeType};
 use indexmap::IndexMap;
 use std::collections::HashSet;
 
-pub fn filter_guests(nodes: &IndexMap<String, Node>) -> IndexMap<&String, &Node> {
-    nodes
-        .iter()
-        .filter(|(_, n)| match n.node_type {
-            NodeType::Guest(_) => true,
-            _ => false,
-        })
-        .collect()
-}
 
 pub fn filter_routers(nodes: &IndexMap<String, Node>) -> IndexMap<&String, &Node> {
     nodes

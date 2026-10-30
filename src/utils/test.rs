@@ -2,31 +2,33 @@ use crate::models::test::Test;
 use crate::utils::files::shared_dir::SHARED_DIR_PATH;
 use crate::utils::os_commands::execute::execute_commands;
 use std::fs;
+use std::net::Ipv4Addr;
 use std::path::PathBuf;
 use tracing::{error, info};
 use walkdir::{DirEntry, WalkDir};
-use crate::models::nodes::node::DistantNetwork;
 use crate::models::os_command::OsCommand;
 use crate::utils::os_commands::guest::GUEST_INPUT_READY;
 
 const TARGET: &str = "test";
 
 
-pub async fn network_test_task(
-    experiment_run_path: PathBuf,
-    guest_name: String,
-    console_host: String,
+pub fn network_test_task(
+    experiment_run_path: &PathBuf,
+    guest_name: &str,
+    console_host: &str,
     console: u16,
-    distant_networks: Vec<DistantNetwork>
+    distant_ip: Ipv4Addr
 ) {
     info!(target: TARGET, "Running network test from {}", &guest_name);
 
     let mut network_test_commands = vec![];
 
-    for distant_network in distant_networks {
-        network_test_commands.push(OsCommand::new_text(GUEST_INPUT_READY, format!("ping -c 10 {}", distant_network.target_ip), true, false));
-    }
-
+    network_test_commands.push(OsCommand::new_text(GUEST_INPUT_READY, format!(r#"printf '%s' 'waiting for {ip:}\n'
+while ! timeout 1.0 ping -c 1 -n {ip:} &> /dev/null
+do
+    printf '%c' '.'
+done
+printf '\n%s\n'  'Server is online'"#, ip = distant_ip), true, false));
     network_test_commands.push(OsCommand::new_line(GUEST_INPUT_READY));
     network_test_commands.push(OsCommand::new_line(GUEST_INPUT_READY));
     
@@ -36,7 +38,7 @@ pub async fn network_test_task(
         &console_host,
         console,
         network_test_commands,
-        Some(20_000),
+        Some(u64::MAX),
         None
     ) {
         error!(target: TARGET, "{:?}", err);

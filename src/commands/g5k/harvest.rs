@@ -20,8 +20,7 @@ pub async fn harvest_g5k(command: HarvestG5kCommand) -> anyhow::Result<()> {
     let session = connect_to_ssh(&command.login)?;
 
 
-    let list_command = format!(r#"if [ -d "{site}/public/results" ]; then find "{site}/public/results" -mindepth 1 -maxdepth 1 -type d -print0; else exit 0; fi"#);
-    let output = ssh_exec(&session, &list_command)?;
+    let output = ssh_exec(&session, r#"if [ -d "public/results" ]; then find "public/results" -mindepth 1 -maxdepth 1 -type d -print0; else exit 0; fi"#)?;
 
     let remote_files: Vec<&str> = output
         .split('\0')
@@ -36,7 +35,7 @@ pub async fn harvest_g5k(command: HarvestG5kCommand) -> anyhow::Result<()> {
 
     info!(target: TARGET, "Harvesting results from Grid'5000 site {site}");
 
-    let remote_root = Path::new(site).join("public").join("results");
+    let remote_root = Path::new("public").join("results");
 
     let mut total_files = 0;
     let mut total_bytes = 0;

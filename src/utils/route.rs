@@ -25,7 +25,6 @@ pub fn generate_distant_network_from_test(from_node_name: &str, from_node: &mut 
         network: distant_network,
         gateway,
         adapter_index: GUEST_NIC_INDEX,
-        target_ip: distant_ip.address(),
     });
 
     Ok(())

@@ -15,10 +15,6 @@ pub struct RunCommandArgs {
     #[arg(long)]
     pub runs: u8,
 
-    /// No sleep after starting the nodes and before starting the experiment
-    #[arg(long)]
-    pub no_sleep: bool,
-
     /// Do not run test in the experiment
     #[arg(long)]
     pub no_test: bool,
