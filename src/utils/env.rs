@@ -5,7 +5,8 @@ use std::process::{exit, Command};
 use dotenv::dotenv;
 use tracing::{error, info, warn};
 use crate::{GUEST_IMAGE_PATH, QEMU_BINARY, QEMU_ENABLE_KVM, QEMU_IMG_BINARY, QEMU_WORK_DIR};
-use crate::utils::qemu::network::{select_link_backend, VhostMode};
+use crate::utils::qemu::network::{select_link_backend, set_virtio_queues, VhostMode, VirtioQueues};
+use crate::utils::qemu::numa::{set_numa_mode, NumaMode};
 
 const TARGET: &str = "env";
 
@@ -88,6 +89,26 @@ pub fn harvest_env_variables() {
         error!(target: TARGET, "{err}");
         exit(1);
     }
+
+    let virtio_queues = match env::var("QEMU_VIRTIO_QUEUES") {
+        Ok(value) => VirtioQueues::parse(&value).unwrap_or_else(|err| {
+            error!(target: TARGET, "{err}");
+            exit(1);
+        }),
+        Err(_) => VirtioQueues::PerVcpu,
+    };
+
+    set_virtio_queues(virtio_queues);
+
+    let numa_mode = match env::var("QEMU_NUMA") {
+        Ok(value) => NumaMode::parse(&value).unwrap_or_else(|err| {
+            error!(target: TARGET, "{err}");
+            exit(1);
+        }),
+        Err(_) => NumaMode::Auto,
+    };
+
+    set_numa_mode(numa_mode);
 }
 
 pub fn work_dir() -> PathBuf {

@@ -8,7 +8,7 @@ use crate::models::nodes::node::Node;
 use crate::utils::qemu::network::{create_tap_pair, link_backend, LinkBackend};
 use crate::utils::qemu::ports::allocate_udp_port;
 use crate::utils::qemu::qmp::qmp_execute;
-use crate::utils::qemu::vm::netdev_id;
+use crate::utils::qemu::vm::{netdev_id, QemuVm};
 
 const TARGET: &str = "link";
 
@@ -28,7 +28,7 @@ pub fn create_link(nodes: &mut IndexMap<String, Node>, link: &Link, link_index: 
     }
 }
 
-fn vm_of<'a>(nodes: &'a mut IndexMap<String, Node>, node_name: &str) -> anyhow::Result<&'a mut crate::utils::qemu::vm::QemuVm> {
+fn vm_of<'a>(nodes: &'a mut IndexMap<String, Node>, node_name: &str) -> anyhow::Result<&'a mut QemuVm> {
     nodes
         .get_mut(node_name)
         .and_then(|node| node.vm.as_mut())
@@ -36,7 +36,10 @@ fn vm_of<'a>(nodes: &'a mut IndexMap<String, Node>, node_name: &str) -> anyhow::
 }
 
 fn create_tap_link(nodes: &mut IndexMap<String, Node>, link: &Link, link_index: usize) -> anyhow::Result<QemuLink> {
-    let (tap_a, tap_b) = create_tap_pair(link_index)?;
+    // The taps must be created with the multiqueue flag their VM will open them with
+    let queues_a = vm_of(nodes, &link.node_a)?.tap_queues(link.adapter_a)?;
+    let queues_b = vm_of(nodes, &link.node_b)?.tap_queues(link.adapter_b)?;
+    let (tap_a, tap_b) = create_tap_pair(link_index, queues_a, queues_b)?;
 
     let vm_a = vm_of(nodes, &link.node_a)?;
     vm_a.attach_tap(link.adapter_a, tap_a.clone())?;

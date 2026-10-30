@@ -88,7 +88,10 @@ async fn scenario() {
     nics.insert(NicIndex(String::from("1")), Nic { nic_type: NicType::E1000, ip_address: "10.0.1.1/24".parse().unwrap() });
 
     let mut nodes = IndexMap::new();
-    nodes.insert(String::from("Client"), node(NodeType::Guest(Guest { ip: "10.0.1.2/24".parse().unwrap() })));
+    // 2 vCPUs: the client's VirtIO NIC gets 2 queue pairs (QEMU_VIRTIO_QUEUES=auto)
+    let mut client_node = node(NodeType::Guest(Guest { ip: "10.0.1.2/24".parse().unwrap() }));
+    client_node.vcpu = 2;
+    nodes.insert(String::from("Client"), client_node);
     nodes.insert(String::from("Router"), node(NodeType::Router(Router {
         id: String::from("1"),
         os_name: String::from("Test"),
@@ -142,6 +145,14 @@ async fn scenario() {
             assert!(Path::new(&format!("/sys/class/net/{tap}")).exists());
         }
         assert!(network.contains("ifname=nosb0000b"));
+
+        // Multiqueue: the client's tap is multi_queue and opened twice, the router's e1000 tap is not
+        let tap_flags = |tap: &str| String::from_utf8_lossy(&Command::new("ip").args(["-d", "link", "show", tap]).output().unwrap().stdout).to_string();
+        assert!(tap_flags("nosb0000a").contains("multi_queue"), "{}", tap_flags("nosb0000a"));
+        assert!(!tap_flags("nosb0000b").contains("multi_queue"), "{}", tap_flags("nosb0000b"));
+        let client_network = hmp(nodes["Client"].vm.as_ref().unwrap().qmp_port, "info network").await;
+        println!("{client_network}");
+        assert_eq!(client_network.matches("ifname=nosb0000a").count(), 2);
         let filters = Command::new("tc").args(["filter", "show", "dev", "nosb0000a", "ingress"]).output().unwrap();
         assert!(String::from_utf8_lossy(&filters.stdout).contains("nosb0000b"));
     }
