@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 USER="$1"
+COMMANDS_FILE="$2"
 
 set -e
 
@@ -63,12 +64,12 @@ sudo cpupower idle-set -D 2
 
 cd "/home/${USER}/survey/Network-Operating-System-benchmark"
 
-rm -rf experimentation/results/*
+#rm -rf experimentation/results/*
 
 cargo run -- generate files --override
 
-chmod +x run_experiment.sh
-./run_experiment.sh
+chmod +x "${COMMANDS_FILE}"
+./"${COMMANDS_FILE}"
 
 if [ ! -d "/home/${USER}/public/results" ]; then
         mkdir "/home/${USER}/public/results"
