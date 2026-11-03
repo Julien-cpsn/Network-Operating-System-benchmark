@@ -14,4 +14,4 @@
 /experimentation/vms
 /experimentation/plots/*
 
-run_experiment.sh
+run_experiment*

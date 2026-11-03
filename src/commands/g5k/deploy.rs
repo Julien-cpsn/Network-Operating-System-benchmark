@@ -34,6 +34,8 @@ pub async fn deploy_g5k(command: DeployG5kCommand) -> anyhow::Result<()> {
     ensure_identifier("queue", &command.queue, false)?;
     ensure_identifier("experiment name", &command.experiment_name, true)?;
 
+    let commands_file_name = command.experiment_commands.file_name().context("The provided experiment commands file is not a file")?.to_string_lossy().to_string();
+
     for (index, job_type) in command.job_type.iter().enumerate() {
         ensure_identifier(&format!("job type {index}"), &job_type, false)?;
     }
@@ -93,8 +95,8 @@ pub async fn deploy_g5k(command: DeployG5kCommand) -> anyhow::Result<()> {
     let password = rpassword::prompt_password("Grid5000 password: ")?;
     println!();
 
-    prepare_site_machine(&command.login, &command.experiment_name, &command.experiment_commands, &operating_systems_to_use)?;
-    let job_id = submit_job(&command, &password).await?;
+    prepare_site_machine(&command.login, &command.experiment_name, &command.experiment_commands, &commands_file_name, &operating_systems_to_use)?;
+    let job_id = submit_job(&command, &password, &commands_file_name).await?;
 
     info!(target: TARGET, "Results will be available at: https://api.grid5000.fr/stable/sites/{}/public/{}/", &command.login.site,  &command.login.user);
 
@@ -113,7 +115,7 @@ pub async fn deploy_g5k(command: DeployG5kCommand) -> anyhow::Result<()> {
 
 // ---------------------------------------------------------------- SSH
 
-fn prepare_site_machine(login: &G5kLogin, experiment_name: &String, experiment_commands: &PathBuf, operating_systems_to_use: &IndexMap<String, OperatingSystem>) -> anyhow::Result<()> {
+fn prepare_site_machine(login: &G5kLogin, experiment_name: &String, experiment_commands: &PathBuf, commands_file_name: &str, operating_systems_to_use: &IndexMap<String, OperatingSystem>) -> anyhow::Result<()> {
     info!(target: TARGET, "Connecting to Grid'5000 SSH ({})", G5K_ACCESS_HOST);
     let session = connect_to_ssh(&login)?;
     info!(target: TARGET, "SSH connected successfully");
@@ -153,8 +155,8 @@ fn prepare_site_machine(login: &G5kLogin, experiment_name: &String, experiment_c
     info!(target: TARGET, "All images uploaded");
 
     info!(target: TARGET, "Uploading the commands to Grid'5000");
-    scp_upload(&session, &experiment_commands, "survey/Network-Operating-System-benchmark/run_experiment.sh", 0o774, true)?;
-    info!(target: TARGET, "Commands uploaded as \"run_experiment.sh\"");
+    scp_upload(&session, &experiment_commands, &format!("survey/Network-Operating-System-benchmark/{commands_file_name}"), 0o774, true)?;
+    info!(target: TARGET, "Commands uploaded as \"{commands_file_name}\"");
 
     info!(target: TARGET, "Uploading run_benchmark_g5k.sh to Grid'5000");
     scp_upload(&session, &env::current_dir()?.as_path().join("run_benchmark_g5k.sh"), "run_benchmark_g5k.sh", 0o774, true)?;
@@ -171,7 +173,7 @@ fn prepare_site_machine(login: &G5kLogin, experiment_name: &String, experiment_c
 
 // ---------------------------------------------------------------- Grid'5000 API
 
-async fn submit_job(command: &DeployG5kCommand, password: &str) -> anyhow::Result<u64> {
+async fn submit_job(command: &DeployG5kCommand, password: &str, command_file_name: &str) -> anyhow::Result<u64> {
     let client = reqwest::Client::new();
     let jobs_url = format!("{}/sites/{}/jobs", G5K_API_URL, command.login.site);
 
@@ -184,8 +186,9 @@ async fn submit_job(command: &DeployG5kCommand, password: &str) -> anyhow::Resul
 
     let payload = json!({
         "resources": resources,
-        "command": format!("/home/{}/run_benchmark_g5k.sh \"{}\"", command.login.user, command.login.user),
+        "command": format!("/home/{user:}/run_benchmark_g5k.sh \"{user:}\" \"{}\"", &command_file_name, user = command.login.user),
         "stdout": experiment_stdout_file(&command.experiment_name),
+        "stderr": experiment_stderr_file(&command.experiment_name),
         "queue": queue,
         "types": &command.job_type,
         "properties": format!("cluster='{}'", command.cluster),
@@ -273,7 +276,7 @@ async fn wait_for_job(command: &DeployG5kCommand, password: &str, job_id: u64) -
                 return Ok(())
             },
             "error" => {
-                let output = ssh_exec(&session, &format!("cat ~/{}", experiment_stderr_file(&command.experiment_name, job_id)))?;
+                let output = ssh_exec(&session, &format!("cat ~/{}", experiment_stderr_file(&command.experiment_name)))?;
                 let lines = output.split('\n').collect::<Vec<&str>>();
                 let max = min(lines.len(), 15);
                 bail!("Job {job_id} ended in error:\n\n{}", &lines[lines.len() - max..].join("\n"))
@@ -302,6 +305,6 @@ fn experiment_stdout_file(experiment_name: &str) -> String {
     format!("stdout-benchmark-nos-{}.txt", experiment_name)
 }
 
-fn experiment_stderr_file(experiment_name: &str, job_id: u64) -> String {
-    format!("OAR.benchmark-nos-{}.{}.stderr", experiment_name, job_id)
+fn experiment_stderr_file(experiment_name: &str) -> String {
+    format!("stderr-benchmark-nos-{}.txt", experiment_name)
 }

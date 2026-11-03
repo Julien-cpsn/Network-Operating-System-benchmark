@@ -392,7 +392,7 @@ fn list_files_with_extension(dir: &Path, extension: &str) -> anyhow::Result<Vec<
     let mut files: Vec<PathBuf> = fs::read_dir(dir)?
         .filter_map(|e| e.ok().map(|e| e.path()))
         .filter(|p| p.is_file() && p.extension().is_some_and(|e| e == extension))
-        .filter(|p| !p.ends_with("Client.csv") && !p.ends_with("Server.csv") && !p.ends_with("numa_placement.csv"))
+        .filter(|p| !p.ends_with("numa_placement.csv"))
         .collect();
     files.sort();
     Ok(files)

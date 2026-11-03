@@ -375,41 +375,9 @@ fn remote_file_size(session: &Session, remote_path: &str) -> anyhow::Result<Opti
     Ok(Some(size))
 }
 
-/// SCP can only receive single files, so every regular file of the remote directory is listed
-/// and received one by one, keeping the directory structure. Existing local files are overwritten.
-/// Returns the number of downloaded files and their total size in bytes.
-pub fn download_dir(session: &Session, remote_dir: &str, remote_root: &Path, local_root: &Path) -> anyhow::Result<(usize, u64)> {
-    let list_command = format!("find {} -type f -print0", shell_quote(remote_dir));
-    let output = ssh_exec(session, &list_command)?;
-
-    let mut files = 0;
-    let mut bytes = 0;
-
-    for remote_file in output.split('\0').filter(|path| !path.is_empty()) {
-        let relative_path = Path::new(remote_file).strip_prefix(remote_root)?;
-        ensure_safe_relative_path(relative_path)?;
-
-        let local_path = local_root.join(relative_path);
-        debug!(target: TARGET, "{} -> {}", remote_file, local_path.display());
-
-        bytes += scp_download(session, remote_file, &local_path)?;
-        files += 1;
-    }
-
-    // `find -type f` does not list empty directories, keep them
-    let dirs_command = format!("find {} -type d -empty -print0", shell_quote(remote_dir));
-    for remote_empty_dir in ssh_exec(session, &dirs_command)?.split('\0').filter(|path| !path.is_empty()) {
-        let relative_path = Path::new(remote_empty_dir).strip_prefix(remote_root)?;
-        ensure_safe_relative_path(relative_path)?;
-        fs::create_dir_all(local_root.join(relative_path))?;
-    }
-
-    Ok((files, bytes))
-}
-
 /// Downloads one remote file over SCP. `remote_path` is relative to the remote home directory.
 /// The file is written to a temporary name first, so an interrupted download never leaves a truncated result behind.
-fn scp_download(session: &Session, remote_path: &str, local_path: &Path) -> anyhow::Result<u64> {
+pub fn scp_download(session: &Session, remote_path: &str, local_path: &Path) -> anyhow::Result<u64> {
     if let Some(parent) = local_path.parent() {
         fs::create_dir_all(parent).with_context(|| format!("Could not create \"{}\"", parent.display()))?;
     }
