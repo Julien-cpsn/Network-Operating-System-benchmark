@@ -80,6 +80,7 @@
     start = [
         { send = "timeout 120 sh -c 'until sudo vtysh -c \"show daemons\" 2>/dev/null | grep -qw zebra; do sleep 1; done' </dev/null", assert_true = [["OS", "SONiC"]] },
         { send = "timeout 120 sh -c 'until sudo vtysh -c \"show daemons\" 2>/dev/null | grep -qw bgpd; do sleep 1; done' </dev/null", assert_true = [["OS", "SONiC"]] },
+        { send = "sudo docker exec bgp supervisorctl stop bgpcfgd </dev/null", assert_true = [["OS", "SONiC"]] },
         "sudo vtysh",
         { expect = "# ", send = "configure terminal" },
         { expect = "(config)# ", send = "no router bgp 65100" },
