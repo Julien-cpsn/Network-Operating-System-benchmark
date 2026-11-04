@@ -24,13 +24,12 @@ pub fn network_test_task(
 
     let mut network_test_commands = vec![];
 
-    network_test_commands.push(OsCommand::new_text(GUEST_INPUT_READY, format!("printf '%s\n' 'waiting for {distant_ip}'"), true, false));
+    network_test_commands.push(OsCommand::new_text(GUEST_INPUT_READY, format!("printf '%s\\n' 'waiting for {distant_ip}'"), true, false));
     network_test_commands.push(OsCommand::new_text(GUEST_INPUT_READY, format!(r#"while ! timeout 1.0 ping -c 1 -n {distant_ip} &> /dev/null
 do
     printf '%c' '.'
-done
-printf '\n%s\n'  'Server is online'"#), true, false));
-    network_test_commands.push(OsCommand::new_text(GUEST_INPUT_READY, "printf '\n%s\n'  'Server is back online'", true, false));
+done"#), true, false));
+    network_test_commands.push(OsCommand::new_text(GUEST_INPUT_READY, "printf '\\n%s\\n'  'Server is online'", true, false));
     network_test_commands.push(OsCommand::new_line(GUEST_INPUT_READY));
     network_test_commands.push(OsCommand::new_line(GUEST_INPUT_READY));
 
