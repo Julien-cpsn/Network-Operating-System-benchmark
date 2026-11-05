@@ -9,6 +9,7 @@ use clap::{Parser, Subcommand};
 use clap_verbosity_flag::Verbosity;
 use strum::Display;
 use crate::args::compute_results::ComputeResultsCommand;
+use crate::args::analyze::AnalyzeCommand;
 
 #[derive(Debug, Parser)]
 #[command(version, about)]
@@ -30,6 +31,8 @@ pub enum Command {
     Compute(ComputeResultsCommand),
     /// Plot experiment results
     Plot(PlotCommand),
+    /// Compare every experiment: effect sizes, OS rankings, Pareto fronts (needs uv or python3)
+    Analyze(AnalyzeCommand),
     #[clap(subcommand)]
     /// Upload experiments to Grid'5000 and reserve a node to run them
     G5k(G5kCommands),

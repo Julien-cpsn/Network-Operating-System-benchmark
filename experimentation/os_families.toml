@@ -1,0 +1,15 @@
+# Family of each OS of `operating_systems.toml`, used by `analyze` to compare architectures
+# (GPOS = General Purpose OS, COS = Control plane Network OS, DOS = Data plane Network OS,
+# MetaOS = Meta Operating System). OSes missing here are reported as "unknown".
+[families]
+"BSDRP-BIRD2" = "COS"
+"BSDRP-FRR" = "COS"
+"DANOS" = "COS"
+"Debian" = "GPOS"
+"Debian-FRR" = "GPOS"
+"DNOS10" = "COS"
+"EXOS" = "COS"
+"FreeBSD" = "GPOS"
+"MikroTik" = "COS"
+"SONiC" = "COS"
+"VyOS" = "COS"
