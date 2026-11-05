@@ -111,6 +111,12 @@ pub fn harvest_env_variables() {
     set_numa_mode(numa_mode);
 }
 
-pub fn work_dir() -> PathBuf {
-    QEMU_WORK_DIR.get().unwrap().clone()
+pub fn work_dir(experiment_name: Option<&str>) -> PathBuf {
+    let mut work_dir = QEMU_WORK_DIR.get().unwrap().clone();
+
+    if let Some(name) = experiment_name {
+        work_dir = work_dir.join(name);
+    }
+
+    work_dir
 }

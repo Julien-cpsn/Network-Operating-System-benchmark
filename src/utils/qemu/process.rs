@@ -90,6 +90,7 @@ pub fn stop_all_vms(work_dir: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[allow(unused)]
 /// Stops leftover VMs, wipes their disks and deletes their taps
 pub fn stop_and_delete_all_vms(work_dir: &Path) -> anyhow::Result<()> {
     stop_all_vms(work_dir)?;
