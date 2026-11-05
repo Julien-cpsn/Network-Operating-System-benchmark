@@ -168,7 +168,7 @@ fn download_files(command: &HarvestG5kCommand, files: &[RemoteFile], local_root:
         }
     });
 
-    if let Some(error) = download_error.into_inner().unwrap() {
+    if let Some(error) = download_error.into_inner()? {
         return Err(error);
     }
 
@@ -176,7 +176,7 @@ fn download_files(command: &HarvestG5kCommand, files: &[RemoteFile], local_root:
 
     if downloaded < total_files {
         // Every connection failed (a partial failure is absorbed by the other workers)
-        return Err(connect_error.into_inner().unwrap().unwrap_or_else(|| anyhow!("Only {downloaded}/{total_files} files were downloaded")))
+        return Err(connect_error.into_inner()?.unwrap_or_else(|| anyhow!("Only {downloaded}/{total_files} files were downloaded")))
             .context("Could not connect to Grid'5000");
     }
 

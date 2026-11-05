@@ -75,7 +75,14 @@ if [ ! -d "/home/${USER}/public/results" ]; then
         mkdir "/home/${USER}/public/results"
 fi
 
-cp -r "experimentation/results" "/home/${USER}/public/"
+dest="/home/${USER}/public/results"
+
+for d in experimentation/results/*/; do
+  name=$(basename "$d")
+  rm -rf "${dest:?}/${name}"
+  cp -r "${d%/}" "$dest/"
+done
+
 cp host_config.txt "/home/${USER}/public/results/"
 
 echo DONE
