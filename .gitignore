@@ -13,5 +13,8 @@
 /experimentation/shared_with_vm/*
 /experimentation/vms
 /experimentation/plots/*
+/experimentation/analysis/*
+__pycache__/
+.pytest_cache/
 
 run_experiment*

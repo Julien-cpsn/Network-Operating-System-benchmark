@@ -111,6 +111,32 @@ cargo run -- plot --os SONiC --nic e1000 --test-batch "Basic RRUL at start" --re
 
 The plots are then stored in `./experimentation/plots/` 
 
+### 6. Compare every experiment
+
+```shell
+cargo run -- analyze
+```
+
+This reads every run of every experiment in `./experimentation/results/` (the raw `.flent.gz`, host monitor and router log files, so `compute` is not needed first) and answers: which factors matter, how much, and which OS is best where.
+It accepts the same selection arguments as `run` and `plot` (e.g. `--topology Multi-operator --nic virt-io`); a selection gets its own sub-folder.
+Results are stored in `./experimentation/analysis/`, with a summary in `report.md`:
+
+| Folder        | Content                                                                                                                                                                                                                               |
+|---------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `data/`       | `runs.csv` (one row per experiment x test x run: factors, OS architecture, every metric), `routers.csv` (per node), `experiments.csv` (median per experiment, bootstrap 95 % CI, CV)                                                  |
+| `noise/`      | run-to-run variability and runs needed for ±5 %; `rerun_candidates.csv`: OS pairs whose order is not established in a scenario, with the runs needed to separate them; `validity.csv`: saturated client/server, CPU from the guest... |
+| `design/`     | which factor combinations exist, the blocks (one per topology) and the factors dropped because they are aliased with others                                                                                                           |
+| `effects/`    | partial ω² of `y ~ os + factors + os:factor` (type II ANOVA, log scale for throughput, latency and resources), and the same with the OS replaced by its family, network stack and routing stack; OS x factor interaction plots        |
+| `importance/` | gradient boosting cross-check: permutation importance (folds grouped by experiment) and Friedman's H² for every pair of factors                                                                                                       |
+| `ranking/`    | Friedman test and Nemenyi critical difference over the scenarios (all, and per topology), critical difference diagrams, OS x scenario scoreboards                                                                                     |
+| `tradeoffs/`  | Pareto fronts (throughput, p95 latency, router cores), Spearman correlations between metrics, sensitivity of each OS to the resources (scaling with the vCPUs), the NIC, failures and routing                                         |
+
+Metrics, per run: TCP download/upload/total, throughput stability, ICMP latency under load (mean, median, p95, p99) and idle, latency induced by the load, UDP EF/BE latency, Jain fairness of the TCP flows, VoIP metrics, outage and recovery after a link failure; per router (over the steady state of the load phase): CPU in **cores** (`%/100 x vCPUs`, comparable across resource levels) for guest code and including emulation/vhost, busiest thread, host CPU time per packet, memory idle and its growth under load.
+Topology-level resources are sums and maxima over the routers: routers that carry no traffic (`active_routers`) are counted but cannot hide the load of the path actually used.
+
+Useful options: `--reuse` (reuse `data/runs.csv` instead of re-reading the results), `--no-model` (skip the slowest step), `--metrics tcp_total_mbps,icmp_latency_p95_ms`, `--min-coverage 0.8` (share of the scenarios an OS must cover to be ranked).
+The analysis can also be run directly: `uv run python -m analysis --help`. Its tests build a synthetic results tree with known effects and check that every step recovers them: `uv run --group dev pytest`.
+
 ## Plot example
 
 WIP

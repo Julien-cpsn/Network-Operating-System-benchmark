@@ -35,7 +35,7 @@ use crate::utils::qemu::numa::place_vms;
 use crate::utils::qemu::image::resolve_images;
 use crate::utils::qemu::ports::reset_port_allocator;
 use crate::utils::qemu::network::{delete_all_taps, link_backend};
-use crate::utils::qemu::process::{stop_all_vms, stop_and_delete_all_vms};
+use crate::utils::qemu::process::{stop_all_vms};
 use crate::utils::qemu::vm::{sanitize_name, QemuVm};
 use crate::utils::log::{find_and_delete_log_files, setup_experiment_logger, EXPERIMENT_LOG_FILE_NAME, find_and_delete_experiment_log_file};
 use crate::utils::monitor::monitor_task;
@@ -91,7 +91,7 @@ pub async fn run(run_command: RunCommand) -> anyhow::Result<()> {
         thread::spawn(|| {
             thread::sleep(Duration::from_secs(3));
             warn!(target: "run", "Experiment did not stop by itself, stopping VMs");
-            let _ = stop_all_vms(&work_dir());
+            let _ = stop_all_vms(&work_dir(None));
             let _ = delete_all_taps();
             exit(130);
         });
@@ -139,7 +139,7 @@ pub async fn run(run_command: RunCommand) -> anyhow::Result<()> {
                 },
                  _ = token.cancelled() => {
                     info!(target: TARGET, "Stopping experiment");
-                    stop_all_vms(&work_dir())?;
+                    stop_all_vms(&work_dir(Some(&experiment.experiment_name)))?;
                     delete_all_taps()?;
                     break 'experiment_loop;
                 }
@@ -186,8 +186,8 @@ pub async fn run_experiment(
     info!(target: TARGET, "Link backend: {}", link_backend());
 
     // Stops the VMs left by a previous experiment and deletes their disks
-    let work_dir = work_dir();
-    stop_and_delete_all_vms(&work_dir)?;
+    let work_dir = work_dir(Some(&experiment.experiment_name));
+    //stop_and_delete_all_vms(&work_dir)?;
     reset_port_allocator();
     find_and_delete_log_files(&experiment_run_path, &experiment.network.nodes)?;
 

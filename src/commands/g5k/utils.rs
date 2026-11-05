@@ -382,9 +382,7 @@ pub fn scp_download(session: &Session, remote_path: &str, local_path: &Path) -> 
         fs::create_dir_all(parent).with_context(|| format!("Could not create \"{}\"", parent.display()))?;
     }
 
-    let (mut channel, stat) = session
-        .scp_recv(Path::new(remote_path))
-        .with_context(|| format!("Could not receive \"~/{remote_path}\""))?;
+    let (mut channel, stat) = session.scp_recv(Path::new(remote_path)).with_context(|| format!("Could not receive \"~/{remote_path}\""))?;
 
     let mut temporary_path: PathBuf = local_path.to_path_buf();
     temporary_path.as_mut_os_string().push(".part");

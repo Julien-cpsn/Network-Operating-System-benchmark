@@ -27,7 +27,7 @@ pub fn extract_experiments_and_results(experiment_selection: &ExperimentSelectio
         let experiment_results_dir_path = RESULT_DIR_PATH.join(&experiment.experiment_name);
 
         if !experiment_results_dir_path.exists() {
-            warn!(target: TARGET, "Result files for \"{}\" does not exist", &experiment.experiment_name);
+            //warn!(target: TARGET, "Result files for \"{}\" does not exist", &experiment.experiment_name);
             continue;
         }
 
@@ -63,11 +63,15 @@ fn extract_summaries(experiment: &Experiment, experiment_results_dir_path: &Path
     for test in &experiment.test_batch {
         let test_entry = run_entry.entry(test.test.clone()).or_insert(Vec::new());
 
-        let result_dir_path = experiment_results_dir_path.join(SUMMARY_FOLDER_NAME).join(&test.name);
-
         if !experiment_results_dir_path.exists() {
             warn!(target: TARGET, "Result file for \"{}\" \"{}\" does not exist", &experiment.experiment_name, &test.name);
             continue;
+        }
+
+        let result_dir_path = experiment_results_dir_path.join(SUMMARY_FOLDER_NAME).join(&test.name);
+
+        if !result_dir_path.exists() {
+            warn!(target: TARGET, "Test \"{}\" results do not exist in experiment {}", &test.name, &experiment.experiment_name);
         }
 
         for file_path in result_dir_path.read_dir()? {
@@ -105,8 +109,8 @@ fn extract_runs(experiment: &Experiment, experiment_results_dir_path: &PathBuf, 
 
             let result_dir_path = run_path.path().join(&test.name);
 
-            if !experiment_results_dir_path.exists() {
-                warn!(target: TARGET, "Result file for \"{}\" \"{}\" does not exist", &experiment.experiment_name, &test.name);
+            if !result_dir_path.exists() {
+                warn!(target: TARGET, "Result file for \"{}\" {} \"{}\" does not exist", &experiment.experiment_name, run_name.replace('_', " "), &test.name);
                 continue;
             }
 

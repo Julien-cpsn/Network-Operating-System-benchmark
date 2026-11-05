@@ -17,6 +17,7 @@ use crate::commands::compute_results::compute_results;
 use crate::commands::g5k::deploy::deploy_g5k;
 use crate::commands::g5k::harvest::harvest_g5k;
 use crate::commands::plot::plot;
+use crate::commands::analyze::analyze;
 use crate::commands::tree::print_tree;
 use crate::utils::log::setup_global_logger;
 
@@ -51,6 +52,7 @@ async fn handle_command(command: &Command) -> anyhow::Result<()> {
         Command::Run(run_command) => run(run_command.clone()).await?,
         Command::Compute(compute_results_command) => compute_results(compute_results_command.clone())?,
         Command::Plot(plot_command) => plot(plot_command.clone())?,
+        Command::Analyze(analyze_command) => analyze(analyze_command.clone())?,
         Command::G5k(g5k_command) => match g5k_command {
             G5kCommands::Deploy(deploy_command) => deploy_g5k(deploy_command.clone()).await?,
             G5kCommands::Harvest(harvest_command) => harvest_g5k(harvest_command.clone()).await?,
