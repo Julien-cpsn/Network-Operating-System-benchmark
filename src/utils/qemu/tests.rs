@@ -50,7 +50,6 @@ async fn hmp(qmp_port: u16, command: &str) -> String {
 static SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore]
 async fn qemu_backend_udp_links() {
     let _guard = SERIAL.lock().await;
     set_link_backend(LinkBackend::Udp, true);
@@ -59,7 +58,6 @@ async fn qemu_backend_udp_links() {
 
 /// Needs root or passwordless sudo. vhost-net is used only if /dev/vhost-net and KVM are usable.
 #[tokio::test(flavor = "multi_thread")]
-#[ignore]
 async fn qemu_backend_tap_links() {
     let _guard = SERIAL.lock().await;
     let vhost = Path::new("/dev/vhost-net").exists() && Path::new("/dev/kvm").exists();

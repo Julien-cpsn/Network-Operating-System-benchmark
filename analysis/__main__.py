@@ -23,7 +23,6 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
     parser.add_argument("--results-dir", type=Path, default=root / "results")
     parser.add_argument("--experiments-dir", type=Path, default=root / "experiments")
     parser.add_argument("--os-file", type=Path, default=root / "operating_systems.toml")
-    parser.add_argument("--families-file", type=Path, default=root / "os_families.toml")
     parser.add_argument("--output-dir", type=Path, default=root / "analysis")
 
     selection = parser.add_argument_group("experiment selection (all if absent)")
@@ -81,7 +80,7 @@ def main(argv: List[str] = None) -> int:
         if not args.results_dir.is_dir():
             LOG.error("No results folder %s (run experiments first)", args.results_dir)
             return 1
-        runs, routers = dataset.build_runs(args.results_dir, args.experiments_dir, args.os_file, args.families_file, filters, args.jobs)
+        runs, routers = dataset.build_runs(args.results_dir, args.experiments_dir, args.os_file, filters, args.jobs)
     if runs.empty:
         LOG.error("No run found in %s for this selection", args.results_dir)
         return 1

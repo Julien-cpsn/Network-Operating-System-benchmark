@@ -12,7 +12,6 @@ def analysed(synthetic_tree, tmp_path_factory):
         "--results-dir", str(synthetic_tree["results"]),
         "--experiments-dir", str(synthetic_tree["experiments"]),
         "--os-file", str(synthetic_tree["os_file"]),
-        "--families-file", str(synthetic_tree["families_file"]),
         "--output-dir", str(out),
         "--jobs", "2",
         "--bootstrap", "200",

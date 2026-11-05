@@ -34,7 +34,6 @@ OS_TOML = """
     network_stack = "FreeBSD network stack"
     routing_stack = "BIRD2"
 """
-FAMILIES_TOML = '[families]\n"Fast" = "GPOS"\n"Scaling" = "COS"\n"Slow" = "COS"\n'
 NIC_FACTOR = {"VirtIO": 1.0, "E1000": 0.4, "RTL8139": 0.15}
 RESOURCES = {"Low Resources": 2, "Medium Resources": 4, "High Resources": 8}
 OUTAGE = {"Fast": 2.0, "Scaling": 5.0, "Slow": 10.0}
@@ -122,13 +121,12 @@ def guest_log(path: Path, start: datetime, mem_idle: float, cpu_pct: float) -> N
 
 
 def build(root: Path, runs: int = 3, oses=None, seed: int = 1) -> Dict[str, Path]:
-    """Writes ``results/``, ``experiments/``, ``operating_systems.toml`` and ``os_families.toml``."""
+    """Writes ``results/``, ``experiments/``, ``operating_systems.toml``"""
     rng = np.random.default_rng(seed)
     results_dir, experiments_dir = root / "results", root / "experiments"
     results_dir.mkdir(parents=True, exist_ok=True)
     experiments_dir.mkdir(parents=True, exist_ok=True)
     (root / "operating_systems.toml").write_text(OS_TOML)
-    (root / "os_families.toml").write_text(FAMILIES_TOML)
     clock = datetime(2026, 10, 30, 12, 0, 0, tzinfo=timezone.utc)
 
     for topology, layout in TOPOLOGIES.items():
@@ -172,5 +170,4 @@ def build(root: Path, runs: int = 3, oses=None, seed: int = 1) -> Dict[str, Path
         "results": results_dir,
         "experiments": experiments_dir,
         "os_file": root / "operating_systems.toml",
-        "families_file": root / "os_families.toml",
     }

@@ -2,6 +2,7 @@
     input_ready = ":~"
     login = "root"
     #password = null
+    os_family = "COS"
     network_stack = "FreeBSD network stack"
     routing_stack = "BIRD2"
     interface_prefix = [
@@ -42,6 +43,7 @@ EOF""" },
     input_ready = ":~"
     login = "root"
     #password = null
+    os_family = "COS"
     network_stack = "FreeBSD network stack"
     routing_stack = "FRR"
     interface_prefix = [
@@ -82,6 +84,7 @@ EOF""" },
     input_ready = ":~"
     login = "tmpuser"
     password = "tmppwd"
+    os_family = "COS"
     network_stack = "Vyatta"
     routing_stack = "FRR"
     interface_prefix = "dp0s"
@@ -122,6 +125,7 @@ EOF""",
     input_ready = ":~"
     login = "root"
     password = "debian"
+    os_family = "GPOS"
     network_stack = "Linux network stack"
     #routing_stack = null
     interface_prefix = "ens"
@@ -173,6 +177,7 @@ EOF""",
     input_ready = ":~"
     login = "debian"
     #password = ""
+    os_family = "GPOS"
     network_stack = "Linux network stack"
     routing_stack = "FRR"
     interface_prefix = "ens"
@@ -213,6 +218,7 @@ EOF""",
     input_ready = "OS10#"
     login = "admin"
     password = "admin"
+    os_family = "COS"
     network_stack = "DNOS10 network stack"
     routing_stack = "DNOS10 routing stack"
     interface_prefix = "1/1/"
@@ -270,6 +276,7 @@ EOF""" },
     input_ready = "* EXOS-VM"
     #login = "admin"
     #password = ""
+    os_family = "COS"
     network_stack = "EXOS network stack"
     routing_stack = "EXOS routing stack"
     interface_prefix = ""
@@ -325,6 +332,7 @@ EOF""" },
     input_ready = ":~"
     login = "root"
     #password = null
+    os_family = "GPOS"
     network_stack = "FreeBSD network stack"
     #routing_stack = "FRR"
     interface_prefix = [
@@ -371,6 +379,7 @@ EOF""",
     input_ready = "[admin@MikroTik] >"
     login = "admin"
     password = ""
+    os_family = "COS"
     network_stack = "MikroTik network stack"
     routing_stack = "MikroTik routing stack"
     interface_prefix = "ether"
@@ -404,6 +413,7 @@ EOF""",
     input_ready = ":~"
     login = "admin"
     password = "YourPaSsWoRd"
+    os_family = "COS"
     network_stack = "SONiC CLI"
     routing_stack = "FRR"
     interface_prefix = "Ethernet"
@@ -468,6 +478,7 @@ EOF""",
     input_ready = ":~"
     login = "vyos"
     password = "vyos"
+    os_family = "COS"
     network_stack = "Linux network stack"
     routing_stack = "FRR"
     interface_prefix = "eth"

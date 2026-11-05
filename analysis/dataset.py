@@ -72,7 +72,7 @@ def load_experiment_index(experiments_dir: Optional[Path]) -> Dict[str, dict]:
     return index
 
 
-def load_os_metadata(os_file: Optional[Path], families_file: Optional[Path]) -> Dict[str, Dict[str, str]]:
+def load_os_metadata(os_file: Optional[Path]) -> Dict[str, Dict[str, str]]:
     """os -> {network_stack, routing_stack, os_family}."""
     metadata: Dict[str, Dict[str, str]] = {}
     if os_file is not None and os_file.is_file():
@@ -80,13 +80,11 @@ def load_os_metadata(os_file: Optional[Path], families_file: Optional[Path]) -> 
             for name, os_config in tomllib.load(file).items():
                 if isinstance(os_config, dict):
                     metadata[name] = {
+                        "os_family": str(os_config.get("os_family") or "none"),
                         "network_stack": str(os_config.get("network_stack") or "none"),
                         "routing_stack": str(os_config.get("routing_stack") or "none"),
                     }
-    if families_file is not None and families_file.is_file():
-        with open(families_file, "rb") as file:
-            for name, family in tomllib.load(file).get("families", {}).items():
-                metadata.setdefault(name, {})["os_family"] = str(family)
+
     return metadata
 
 
@@ -180,12 +178,11 @@ def build_runs(
     results_dir: Path,
     experiments_dir: Optional[Path] = None,
     os_file: Optional[Path] = None,
-    families_file: Optional[Path] = None,
     filters: Optional[Dict[str, Optional[str]]] = None,
     jobs: int = 1,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     index = load_experiment_index(experiments_dir)
-    os_metadata = load_os_metadata(os_file, families_file)
+    os_metadata = load_os_metadata(os_file)
     filters = filters or {}
 
     tasks = []

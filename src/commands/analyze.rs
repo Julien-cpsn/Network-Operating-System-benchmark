@@ -23,7 +23,6 @@ pub fn analyze(analyze_command: AnalyzeCommand) -> anyhow::Result<()> {
         "--results-dir".into(), RESULT_DIR_PATH.display().to_string(),
         "--experiments-dir".into(), EXPERIMENTS_PATH.display().to_string(),
         "--os-file".into(), experimentation_dir.join("operating_systems.toml").display().to_string(),
-        "--families-file".into(), experimentation_dir.join("os_families.toml").display().to_string(),
         "--output-dir".into(), ANALYSIS_DIR_PATH.display().to_string(),
         "--min-coverage".into(), analyze_command.min_coverage.to_string(),
         "--bootstrap".into(), analyze_command.bootstrap.to_string(),

@@ -10,8 +10,7 @@ NAME_FIELDS: List[str] = ["topology", "os", "test_batch", "resources", "nic", "r
 # Factors varied by the benchmark (in the order they are listed in the reports)
 FACTORS: List[str] = ["os", "topology", "test_batch", "resources", "nic", "routing", "failures"]
 
-# Factors that describe the OS architecture (derived from `operating_systems.toml` and
-# `os_families.toml`). Nested in `os`: never modelled together with it.
+# Factors that describe the OS architecture (derived from `operating_systems.toml`). Nested in `os`: never modeled together with it.
 ARCHITECTURE_FACTORS: List[str] = ["os_family", "network_stack", "routing_stack"]
 
 # Natural order of the ordinal factors (plots, sensitivity ratios)
