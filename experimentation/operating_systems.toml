@@ -293,28 +293,30 @@ if __name__ == "__main__":
         { expect = "", control = "c" },
         { expect = "", send = ":wq" },
         "run script bash.py",
-        { expect = " $", send = """cat << EOF > resources.sh
-#!/usr/bin/env bash
-set -eu
-
-cpu() { awk '/^cpu /{printf "%.0f %.0f %.0f\\n", \\$2+\\$3+\\$4+\\$7+\\$8, \\$5+\\$6, \\$9; exit}' /proc/stat; }
-
-read -r pb pi ps <<< "\\$(cpu)"
-printf 'Total (MiB)\\tAvailable (MiB)\\tUsed (MiB)\\tCPU (perc)\\tSteal (perc)\\n'
+        { expect = " $", send = """cat << 'EOF' > resources.sh
+#!/bin/sh
+cpu() {
+    read -r _ u n s id io irq sirq stl _ < /proc/stat
+    b=$((u+n+s+irq+sirq)) i=$((id+io)) t=${stl:-0}
+}
+dec() { printf '%d.%d' $(($1/10)) $(($1%10)); }
+pct() { [ "$2" -gt 0 ] && dec $(((1000*$1 + $2/2) / $2)) || printf '0.0'; }
 EOF""" },
-        { expect = " $", send = """cat << EOF >> resources.sh
+        { expect = " $", send = """cat << 'EOF' >> resources.sh
+cpu; pb=$b pi=$i ps=$t
+printf 'Total (MiB)\\tAvailable (MiB)\\tUsed (MiB)\\tCPU (perc)\\tSteal (perc)\\n'
 while :; do
     sleep 1
-    read -r b i s <<< "\\$(cpu)"
-    awk -v db=\\$((b-pb)) -v di=\\$((i-pi)) -v ds=\\$((s-ps)) '
-        /^MemTotal:/     { mt = \\$2 }
-        /^MemAvailable:/ { ma = \\$2 }
-        END {
-            w = db + di + ds
-            printf "%.1f\\t%.1f\\t%.1f\\t%.1f\\t%.1f\\n", mt/1024, ma/1024, (mt-ma)/1024,
-                   (w > 0 ? 100*db/w : 0), (w > 0 ? 100*ds/w : 0)
-        }' /proc/meminfo
-    pb=\\$b pi=\\$i ps=\\$s
+    cpu
+    db=$((b-pb)) di=$((i-pi)) ds=$((t-ps)); w=$((db+di+ds))
+EOF""" },
+        { expect = " $", send = """cat << 'EOF' >> resources.sh
+    while read -r k v _; do
+        case $k in MemTotal:) mt=$v ;; MemAvailable:) ma=$v ;; esac
+    done < /proc/meminfo
+    printf '%s\\t%s\\t%s\\t%s\\t%s\\n' "$(dec $((mt*10/1024)))" "$(dec $((ma*10/1024)))" \
+        "$(dec $(((mt-ma)*10/1024)))" "$(pct $db $w)" "$(pct $ds $w)"
+    pb=$b pi=$i ps=$t
 done
 EOF""" },
         { expect = " $", send = "chmod +x resources.sh" },
