@@ -2,6 +2,7 @@
     input_ready = ":~"
     login = "root"
     #password = null
+    os_family = "COS"
     network_stack = "FreeBSD network stack"
     routing_stack = "BIRD2"
     interface_prefix = [
@@ -42,6 +43,7 @@ EOF""" },
     input_ready = ":~"
     login = "root"
     #password = null
+    os_family = "COS"
     network_stack = "FreeBSD network stack"
     routing_stack = "FRR"
     interface_prefix = [
@@ -82,6 +84,7 @@ EOF""" },
     input_ready = ":~"
     login = "tmpuser"
     password = "tmppwd"
+    os_family = "COS"
     network_stack = "Vyatta"
     routing_stack = "FRR"
     interface_prefix = "dp0s"
@@ -122,6 +125,7 @@ EOF""",
     input_ready = ":~"
     login = "root"
     password = "debian"
+    os_family = "GPOS"
     network_stack = "Linux network stack"
     #routing_stack = null
     interface_prefix = "ens"
@@ -173,6 +177,7 @@ EOF""",
     input_ready = ":~"
     login = "debian"
     #password = ""
+    os_family = "GPOS"
     network_stack = "Linux network stack"
     routing_stack = "FRR"
     interface_prefix = "ens"
@@ -213,6 +218,7 @@ EOF""",
     input_ready = "OS10#"
     login = "admin"
     password = "admin"
+    os_family = "COS"
     network_stack = "DNOS10 network stack"
     routing_stack = "DNOS10 routing stack"
     interface_prefix = "1/1/"
@@ -270,6 +276,7 @@ EOF""" },
     input_ready = "* EXOS-VM"
     #login = "admin"
     #password = ""
+    os_family = "COS"
     network_stack = "EXOS network stack"
     routing_stack = "EXOS routing stack"
     interface_prefix = ""
@@ -286,28 +293,30 @@ if __name__ == "__main__":
         { expect = "", control = "c" },
         { expect = "", send = ":wq" },
         "run script bash.py",
-        { expect = " $", send = """cat << EOF > resources.sh
-#!/usr/bin/env bash
-set -eu
-
-cpu() { awk '/^cpu /{printf "%.0f %.0f %.0f\\n", \\$2+\\$3+\\$4+\\$7+\\$8, \\$5+\\$6, \\$9; exit}' /proc/stat; }
-
-read -r pb pi ps <<< "\\$(cpu)"
-printf 'Total (MiB)\\tAvailable (MiB)\\tUsed (MiB)\\tCPU (perc)\\tSteal (perc)\\n'
+        { expect = " $", send = """cat << 'EOF' > resources.sh
+#!/bin/sh
+cpu() {
+    read -r _ u n s id io irq sirq stl _ < /proc/stat
+    b=$((u+n+s+irq+sirq)) i=$((id+io)) t=${stl:-0}
+}
+dec() { printf '%d.%d' $(($1/10)) $(($1%10)); }
+pct() { [ "$2" -gt 0 ] && dec $(((1000*$1 + $2/2) / $2)) || printf '0.0'; }
 EOF""" },
-        { expect = " $", send = """cat << EOF >> resources.sh
+        { expect = " $", send = """cat << 'EOF' >> resources.sh
+cpu; pb=$b pi=$i ps=$t
+printf 'Total (MiB)\\tAvailable (MiB)\\tUsed (MiB)\\tCPU (perc)\\tSteal (perc)\\n'
 while :; do
     sleep 1
-    read -r b i s <<< "\\$(cpu)"
-    awk -v db=\\$((b-pb)) -v di=\\$((i-pi)) -v ds=\\$((s-ps)) '
-        /^MemTotal:/     { mt = \\$2 }
-        /^MemAvailable:/ { ma = \\$2 }
-        END {
-            w = db + di + ds
-            printf "%.1f\\t%.1f\\t%.1f\\t%.1f\\t%.1f\\n", mt/1024, ma/1024, (mt-ma)/1024,
-                   (w > 0 ? 100*db/w : 0), (w > 0 ? 100*ds/w : 0)
-        }' /proc/meminfo
-    pb=\\$b pi=\\$i ps=\\$s
+    cpu
+    db=$((b-pb)) di=$((i-pi)) ds=$((t-ps)); w=$((db+di+ds))
+EOF""" },
+        { expect = " $", send = """cat << 'EOF' >> resources.sh
+    while read -r k v _; do
+        case $k in MemTotal:) mt=$v ;; MemAvailable:) ma=$v ;; esac
+    done < /proc/meminfo
+    printf '%s\\t%s\\t%s\\t%s\\t%s\\n' "$(dec $((mt*10/1024)))" "$(dec $((ma*10/1024)))" \
+        "$(dec $(((mt-ma)*10/1024)))" "$(pct $db $w)" "$(pct $ds $w)"
+    pb=$b pi=$i ps=$t
 done
 EOF""" },
         { expect = " $", send = "chmod +x resources.sh" },
@@ -325,6 +334,7 @@ EOF""" },
     input_ready = ":~"
     login = "root"
     #password = null
+    os_family = "GPOS"
     network_stack = "FreeBSD network stack"
     #routing_stack = "FRR"
     interface_prefix = [
@@ -371,6 +381,7 @@ EOF""",
     input_ready = "[admin@MikroTik] >"
     login = "admin"
     password = ""
+    os_family = "COS"
     network_stack = "MikroTik network stack"
     routing_stack = "MikroTik routing stack"
     interface_prefix = "ether"
@@ -404,6 +415,7 @@ EOF""",
     input_ready = ":~"
     login = "admin"
     password = "YourPaSsWoRd"
+    os_family = "COS"
     network_stack = "SONiC CLI"
     routing_stack = "FRR"
     interface_prefix = "Ethernet"
@@ -468,6 +480,7 @@ EOF""",
     input_ready = ":~"
     login = "vyos"
     password = "vyos"
+    os_family = "COS"
     network_stack = "Linux network stack"
     routing_stack = "FRR"
     interface_prefix = "eth"

@@ -3,11 +3,11 @@ use strum::{Display, VariantArray};
 
 #[derive(Debug, Clone, ValueEnum, VariantArray, Display)]
 pub enum HardwareResources {
-    /// Low resources (2 vCPU, 2048 MB RAM)
+    /// Low resources (2 vCPU, 4096 MB RAM)
     #[clap(name = "lr")]
     #[strum(to_string = "Low Resources")]
     LowResources,
-    /// Medium resources (4 vCPU, 4096 MB RAM)
+    /// Medium resources (4 vCPU, 8192 MB RAM)
     #[clap(name = "mr")]
     #[strum(to_string = "Medium Resources")]
     MediumResources,

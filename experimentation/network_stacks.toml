@@ -34,7 +34,9 @@
         "enable ipforwarding vlan vlan{INTERFACE}",
         "enable port {INTERFACE}",
     ]
-    add_static_route = []
+    add_static_route = [
+        "configure iproute add {DISTANT_NETWORK} {GATEWAY}"
+    ]
     stop = []
 
 ["FreeBSD network stack"]
