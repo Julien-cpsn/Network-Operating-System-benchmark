@@ -45,3 +45,17 @@ fn sanitize(value: &str) -> String {
         .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' { c } else { '_' })
         .collect()
 }
+
+/// PID of a dead benchmark process of this host, from the name of an instance directory (`<hostname>-<pid>`).
+/// None for live processes and for instances named through `NOSB_INSTANCE_ID`.
+pub fn dead_local_instance_pid(instance_dir_name: &str) -> Option<u32> {
+    let pid: u32 = instance_dir_name.strip_prefix(&format!("{}-", hostname()))?.parse().ok()?;
+    (!is_process_alive(pid)).then_some(pid)
+}
+
+/// Whether a directory of the work directory belongs to an instance of this version (`<hostname>-<pid>` of any
+/// host, or a `NOSB_INSTANCE_ID`): instances are never deleted on sight, only once their process is dead
+pub fn is_instance_dir_name(name: &str) -> bool {
+    let id_like = name.rsplit_once('-').is_some_and(|(_, pid)| !pid.is_empty() && pid.chars().all(|c| c.is_ascii_digit()));
+    id_like || env::var("NOSB_INSTANCE_ID").is_ok_and(|id| id.trim() == name)
+}

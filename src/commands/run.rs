@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::exit;
 use std::sync::Arc;
 use std::thread;
@@ -48,6 +48,7 @@ use crate::utils::os_commands::routing::rip_config::router_configure_rip_command
 use crate::utils::os_commands::routing::static_route::router_configure_static_commands;
 use crate::utils::route::generate_distant_network_from_test;
 use crate::utils::test::{clear_shared_dir, harvest_results, network_test_task, remove_shared_dir, test_task};
+use crate::utils::instance::{dead_local_instance_pid, is_instance_dir_name};
 use crate::utils::experiment_lock::{acquire_experiment_lock, lock_holder, release_experiment_lock};
 use crate::utils::utils::{filter_routers};
 
@@ -64,7 +65,8 @@ pub async fn run(run_command: RunCommand) -> anyhow::Result<()> {
     fs::create_dir_all(&*SHARED_DIR_PATH)?;
     fs::create_dir_all(&*RESULT_DIR_PATH)?;
 
-    // Taps left on this host by benchmark processes that crashed (the ones of running processes are kept)
+    // VMs and taps left on this host by benchmark processes that died (the ones of running processes are kept)
+    stop_dead_instances_vms()?;
     if link_backend() == LinkBackend::Tap {
         delete_orphan_taps()?;
     }
@@ -180,6 +182,38 @@ pub async fn run(run_command: RunCommand) -> anyhow::Result<()> {
 
     info!(target: TARGET, "Finished");
     info!(target: TARGET, "Total duration: {:?}", experiments_duration);
+
+    Ok(())
+}
+
+/// Stops the VMs of the instances of this host whose process no longer exists, and removes their work directory
+fn stop_dead_instances_vms() -> anyhow::Result<()> {
+    let Some(instances_dir) = work_dir(None).parent().map(Path::to_path_buf) else {
+        return Ok(());
+    };
+    let Ok(entries) = fs::read_dir(&instances_dir) else {
+        return Ok(());
+    };
+
+    for entry in entries.filter_map(Result::ok) {
+        let name = entry.file_name().to_string_lossy().to_string();
+
+        if !entry.path().is_dir() {
+            continue;
+        }
+
+        if let Some(pid) = dead_local_instance_pid(&name) {
+            warn!(target: "run", "Cleaning up instance {name} (process {pid} is dead)");
+            stop_all_vms(&entry.path())?;
+            fs::remove_dir_all(entry.path())?;
+        }
+        else if !is_instance_dir_name(&name) {
+            // Previous versions of the benchmark put the experiment directories directly in the work directory
+            warn!(target: "run", "Cleaning up VMs left by a previous version of the benchmark in {}", entry.path().display());
+            stop_all_vms(&entry.path())?;
+            fs::remove_dir_all(entry.path())?;
+        }
+    }
 
     Ok(())
 }
