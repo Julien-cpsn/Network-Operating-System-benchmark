@@ -7,6 +7,7 @@ use tracing::{error, info, warn};
 use crate::{GUEST_IMAGE_PATH, QEMU_BINARY, QEMU_ENABLE_KVM, QEMU_IMG_BINARY, QEMU_WORK_DIR};
 use crate::utils::qemu::network::{select_link_backend, set_virtio_queues, VhostMode, VirtioQueues};
 use crate::utils::qemu::numa::{set_numa_mode, NumaMode};
+use crate::utils::instance::INSTANCE_ID;
 
 const TARGET: &str = "env";
 
@@ -20,7 +21,8 @@ pub fn harvest_env_variables() {
             "QEMU_BINARY" => { QEMU_BINARY.get_or_init(|| value); },
             "QEMU_IMG_BINARY" => { QEMU_IMG_BINARY.get_or_init(|| value); },
             // Absolute: QEMU changes its working directory to "/" when it daemonizes
-            "QEMU_WORK_DIR" => { QEMU_WORK_DIR.get_or_init(|| current_dir.join(value)); },
+            // One sub-directory per instance: Ctrl-C stops every VM whose pidfile is in the work directory
+            "QEMU_WORK_DIR" => { QEMU_WORK_DIR.get_or_init(|| current_dir.join(value).join(&*INSTANCE_ID)); },
             "QEMU_ENABLE_KVM" => {
                 let enable = match value.to_lowercase().as_str() {
                     "1" | "true" | "yes" | "on" => true,
@@ -40,7 +42,7 @@ pub fn harvest_env_variables() {
     // Defaults
     QEMU_BINARY.get_or_init(|| String::from("qemu-system-x86_64"));
     QEMU_IMG_BINARY.get_or_init(|| String::from("qemu-img"));
-    QEMU_WORK_DIR.get_or_init(|| current_dir.join("experimentation").join("vms"));
+    QEMU_WORK_DIR.get_or_init(|| current_dir.join("experimentation").join("vms").join(&*INSTANCE_ID));
     QEMU_ENABLE_KVM.get_or_init(|| true);
 
     if let Some(guest_image_path) = GUEST_IMAGE_PATH.get() {
@@ -109,6 +111,8 @@ pub fn harvest_env_variables() {
     };
 
     set_numa_mode(numa_mode);
+
+    info!(target: TARGET, "Instance: {} (VMs in {})", *INSTANCE_ID, QEMU_WORK_DIR.get().unwrap().display());
 }
 
 pub fn work_dir(experiment_name: Option<&str>) -> PathBuf {

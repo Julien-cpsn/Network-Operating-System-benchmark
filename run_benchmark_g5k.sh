@@ -4,6 +4,12 @@ COMMANDS_FILE="$2"
 
 set -e
 
+# Several nodes may run this script at the same time on the same NFS home: everything they write
+# to the shared project directory is either per node or protected by a lock
+PROJECT_DIR="/home/${USER}/survey/Network-Operating-System-benchmark"
+NODE="$(hostname -s)"
+HOST_CONFIG="${PROJECT_DIR}/host_config_${NODE}.txt"
+
 sudo-g5k
 
 sudo apt install -y \
@@ -60,29 +66,32 @@ sudo cpupower idle-set -D 2
     echo "smt: $(cat /sys/devices/system/cpu/smt/control)"
     echo "halt_poll_ns: $(cat /sys/module/kvm/parameters/halt_poll_ns)"
     numactl --hardware
-} > host_config.txt 2>&1
+} > "${HOST_CONFIG}" 2>&1
 
-cd "/home/${USER}/survey/Network-Operating-System-benchmark"
+cd "${PROJECT_DIR}"
 
 #rm -rf experimentation/results/*
 
-cargo run -- generate files --override
+# One node at a time: building and (re)writing the experiment files while another node reads them
+flock experimentation/.generate.lock cargo run -- generate files --override
 
 chmod +x "${COMMANDS_FILE}"
 ./"${COMMANDS_FILE}"
 
-if [ ! -d "/home/${USER}/public/results" ]; then
-        mkdir "/home/${USER}/public/results"
-fi
-
 dest="/home/${USER}/public/results"
+mkdir -p "$dest"
 
 for d in experimentation/results/*/; do
   name=$(basename "$d")
+  # Still being run by another node: its results are incomplete, that node copies them when it is done
+  if [ -e "experimentation/locks/${name}.lock" ]; then
+    echo "Skipping ${name}: still running on another node"
+    continue
+  fi
   rm -rf "${dest:?}/${name}"
   cp -r "${d%/}" "$dest/"
 done
 
-cp host_config.txt "/home/${USER}/public/results/"
+cp "${HOST_CONFIG}" "$dest/"
 
 echo DONE

@@ -24,12 +24,45 @@ use anyhow::{anyhow, bail, Context};
 use strum::Display;
 use tracing::{debug, info, warn};
 use crate::QEMU_ENABLE_KVM;
+use crate::utils::instance::{is_process_alive, tap_tag};
 
 const TARGET: &str = "network";
 
-/// Every tap created by the benchmark starts with this prefix, so that they can all be cleaned up
+/// Every tap created by the benchmark is named `nosb<pid><suffix>`: `<pid>` is the PID of the benchmark process
+/// that created it (`tap_tag`, 6 hex digits), so that several processes can run on the same host without deleting
+/// each other's taps, and `<suffix>` is `<link index, 3 hex digits><a|b>` for a link end or `prb` for the probe.
+/// 14 characters at most (IFNAMSIZ is 16 with the terminating NUL).
 pub const TAP_PREFIX: &str = "nosb";
-const PROBE_TAP: &str = "nosbprobe";
+const MAX_LINK_INDEX: usize = 0xFFF;
+
+fn own_tap_prefix() -> String {
+    format!("{TAP_PREFIX}{}", tap_tag())
+}
+
+fn probe_tap() -> String {
+    format!("{}prb", own_tap_prefix())
+}
+
+/// Name of the tap of one end (`side` is 'a' or 'b') of physical link number `link_index`
+pub fn tap_name(link_index: usize, side: char) -> String {
+    format!("{}{link_index:03x}{side}", own_tap_prefix())
+}
+
+/// PID of the process that created a benchmark tap, None if it is not named like one
+fn tap_owner(name: &str) -> Option<u32> {
+    let rest = name.strip_prefix(TAP_PREFIX)?;
+    let (pid, suffix) = (rest.get(..6)?, rest.get(6..)?);
+
+    let is_link_end = suffix.len() == 4
+        && suffix[..3].chars().all(|c| c.is_ascii_hexdigit())
+        && (suffix.ends_with('a') || suffix.ends_with('b'));
+
+    if !is_link_end && suffix != "prb" {
+        return None;
+    }
+
+    u32::from_str_radix(pid, 16).ok()
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Display)]
 pub enum VhostMode {
@@ -178,16 +211,17 @@ fn probe_tap_backend() -> Result<(), String> {
         .map_err(|err| format!("/dev/net/tun is not usable: {err}"))?;
 
     // Creating taps and tc filters needs root (directly or through passwordless sudo)
-    let _ = delete_interface(PROBE_TAP);
+    let probe_tap = probe_tap();
+    let _ = delete_interface(&probe_tap);
 
     let probe = (|| -> anyhow::Result<()> {
-        create_tap(PROBE_TAP, true)?;
-        run_privileged("tc", &["qdisc", "add", "dev", PROBE_TAP, "ingress"])?;
-        redirect(PROBE_TAP, PROBE_TAP)?;
+        create_tap(&probe_tap, true)?;
+        run_privileged("tc", &["qdisc", "add", "dev", &probe_tap, "ingress"])?;
+        redirect(&probe_tap, &probe_tap)?;
         Ok(())
     })();
 
-    let _ = delete_interface(PROBE_TAP);
+    let _ = delete_interface(&probe_tap);
 
     probe.map_err(|err| format!("cannot create taps and tc filters: {err}"))
 }
@@ -267,8 +301,12 @@ fn delete_interface(name: &str) -> anyhow::Result<()> {
 /// The two taps of physical link number `link_index`, wired to each other. `queues_a` and `queues_b`
 /// are the number of queues each VM opens its tap with.
 pub fn create_tap_pair(link_index: usize, queues_a: u32, queues_b: u32) -> anyhow::Result<(String, String)> {
-    let tap_a = format!("{TAP_PREFIX}{link_index:04x}a");
-    let tap_b = format!("{TAP_PREFIX}{link_index:04x}b");
+    if link_index > MAX_LINK_INDEX {
+        bail!("At most {} links are supported with taps, got link number {link_index}", MAX_LINK_INDEX + 1);
+    }
+
+    let tap_a = tap_name(link_index, 'a');
+    let tap_b = tap_name(link_index, 'b');
 
     for (tap, queues) in [(&tap_a, queues_a), (&tap_b, queues_b)] {
         create_tap(tap, queues > 1)?;
@@ -283,20 +321,56 @@ pub fn create_tap_pair(link_index: usize, queues_a: u32, queues_b: u32) -> anyho
     Ok((tap_a, tap_b))
 }
 
-/// Deletes every tap created by the benchmark. Their VMs must have been stopped before.
-pub fn delete_all_taps() -> anyhow::Result<()> {
+fn benchmark_taps() -> Vec<String> {
     let Ok(interfaces) = fs::read_dir("/sys/class/net") else {
-        return Ok(());
+        return Vec::new();
     };
 
-    for interface in interfaces.filter_map(Result::ok) {
-        let name = interface.file_name().to_string_lossy().to_string();
+    interfaces
+        .filter_map(Result::ok)
+        .map(|interface| interface.file_name().to_string_lossy().to_string())
+        .filter(|name| name.starts_with(TAP_PREFIX))
+        .collect()
+}
 
-        if name.starts_with(TAP_PREFIX) {
-            debug!(target: TARGET, "Deleting tap {name}");
+/// Deletes the taps created by this process. Their VMs must have been stopped before.
+/// The taps of other benchmark processes running on the same host are left untouched.
+pub fn delete_own_taps() -> anyhow::Result<()> {
+    let prefix = own_tap_prefix();
+
+    for name in benchmark_taps().into_iter().filter(|name| name.starts_with(&prefix)) {
+        debug!(target: TARGET, "Deleting tap {name}");
+        delete_interface(&name)?;
+    }
+
+    Ok(())
+}
+
+/// Deletes the taps left on this host by benchmark processes that no longer exist (crash, kill -9)
+pub fn delete_orphan_taps() -> anyhow::Result<()> {
+    for name in benchmark_taps() {
+        if let Some(pid) = tap_owner(&name) && !is_process_alive(pid) {
+            debug!(target: TARGET, "Deleting tap {name} left by dead process {pid}");
             delete_interface(&name)?;
         }
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tap_name_tests {
+    use super::*;
+
+    #[test]
+    fn tap_names_fit_and_parse() {
+        let name = tap_name(MAX_LINK_INDEX, 'b');
+        assert!(name.len() <= 15, "{name}");
+        assert_eq!(tap_owner(&name), Some(std::process::id() & 0xFF_FFFF));
+        assert_eq!(tap_owner(&probe_tap()), Some(std::process::id() & 0xFF_FFFF));
+        // Taps of older versions and foreign interfaces are never claimed
+        assert_eq!(tap_owner("nosb0000a"), None);
+        assert_eq!(tap_owner("nosbprobe"), None);
+        assert_eq!(tap_owner("eth0"), None);
+    }
 }

@@ -99,6 +99,7 @@ pub fn harvest_results(experiment_run_path: &PathBuf, test: &Test) -> anyhow::Re
     Ok(())
 }
 
+/// Empties the shared folder of this instance (the other instances have their own)
 pub fn clear_shared_dir() -> anyhow::Result<()> {
     info!(target: TARGET, "Clearing shared directory");
 
@@ -110,6 +111,15 @@ pub fn clear_shared_dir() -> anyhow::Result<()> {
         else {
             fs::remove_file(entry.path())?;
         }
+    }
+
+    Ok(())
+}
+
+/// Removes the shared folder of this instance (at the end of the run, it is per instance)
+pub fn remove_shared_dir() -> anyhow::Result<()> {
+    if SHARED_DIR_PATH.exists() {
+        fs::remove_dir_all(SHARED_DIR_PATH.as_path())?;
     }
 
     Ok(())
