@@ -16,7 +16,7 @@ use crate::models::nodes::router::Router;
 use crate::models::routes::route_config::RouteConfig;
 use crate::utils::files::shared_dir::SHARED_DIR_PATH;
 use crate::utils::link::{create_link, link_failure};
-use crate::utils::qemu::network::{link_backend, set_link_backend, LinkBackend};
+use crate::utils::qemu::network::{link_backend, set_link_backend, tap_name, LinkBackend};
 use crate::utils::qemu::process::{is_qemu_alive, stop_and_delete_all_vms, PID_FILE_NAME};
 use crate::utils::qemu::qmp::qmp_execute;
 use crate::utils::qemu::vm::QemuVm;
@@ -137,22 +137,24 @@ async fn scenario() {
     println!("{network}");
     assert!(network.contains("net1"));
 
+    let (tap_a, tap_b) = (tap_name(0, 'a'), tap_name(0, 'b'));
+
     if link_backend() == LinkBackend::Tap {
         // Both taps exist, are attached to QEMU, and are wired to each other
-        for tap in ["nosb0000a", "nosb0000b"] {
+        for tap in [&tap_a, &tap_b] {
             assert!(Path::new(&format!("/sys/class/net/{tap}")).exists());
         }
-        assert!(network.contains("ifname=nosb0000b"));
+        assert!(network.contains(&format!("ifname={tap_b}")));
 
         // Multiqueue: the client's tap is multi_queue and opened twice, the router's e1000 tap is not
         let tap_flags = |tap: &str| String::from_utf8_lossy(&Command::new("ip").args(["-d", "link", "show", tap]).output().unwrap().stdout).to_string();
-        assert!(tap_flags("nosb0000a").contains("multi_queue"), "{}", tap_flags("nosb0000a"));
-        assert!(!tap_flags("nosb0000b").contains("multi_queue"), "{}", tap_flags("nosb0000b"));
+        assert!(tap_flags(&tap_a).contains("multi_queue"), "{}", tap_flags(&tap_a));
+        assert!(!tap_flags(&tap_b).contains("multi_queue"), "{}", tap_flags(&tap_b));
         let client_network = hmp(nodes["Client"].vm.as_ref().unwrap().qmp_port, "info network").await;
         println!("{client_network}");
-        assert_eq!(client_network.matches("ifname=nosb0000a").count(), 2);
-        let filters = Command::new("tc").args(["filter", "show", "dev", "nosb0000a", "ingress"]).output().unwrap();
-        assert!(String::from_utf8_lossy(&filters.stdout).contains("nosb0000b"));
+        assert_eq!(client_network.matches(&format!("ifname={tap_a}")).count(), 2);
+        let filters = Command::new("tc").args(["filter", "show", "dev", &tap_a, "ingress"]).output().unwrap();
+        assert!(String::from_utf8_lossy(&filters.stdout).contains(&tap_b));
     }
 
     // set_link resolves the netdev ids (an unknown id is an error), then cuts both ends
@@ -168,5 +170,5 @@ async fn scenario() {
     }
 
     stop_and_delete_all_vms(&work_dir).unwrap();
-    assert!(!Path::new("/sys/class/net/nosb0000a").exists());
+    assert!(!Path::new(&format!("/sys/class/net/{tap_a}")).exists());
 }

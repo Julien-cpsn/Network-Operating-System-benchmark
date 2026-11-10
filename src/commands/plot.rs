@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 use std::process::{exit, Command};
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 use crate::args::plot::PlotCommand;
 use crate::utils::files::plot_dir::PLOT_DIR_PATH;
 use crate::utils::files::results_dir::RESULT_DIR_PATH;
@@ -48,7 +48,7 @@ const PLOTS: [Plot; 4] = [
         plot_name: "throughput_latency_ellipse",
         support_tests: &["rrul", "voip-rrul"],
         adjustment: 0,
-        additional_args: &["--bounds-x=15,0", "--bounds-y=15000,0"]
+        additional_args: &["--bounds-x=400,0", "--bounds-y=11000,0"]
     },
 ];
 
@@ -134,8 +134,7 @@ fn plot_flent(plot_command: &PlotCommand, plot_output_directory_path: &PathBuf, 
         }
 
         if flent_input_files_args.is_empty() {
-            error!(target: TARGET, "No files found for plot");
-            exit(1);
+            continue;
         }
 
         let flent_notes = adjust_note(&notes, plot.adjustment);

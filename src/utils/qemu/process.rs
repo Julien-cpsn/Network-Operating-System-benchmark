@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use std::thread::sleep;
 use tracing::{debug, info, warn};
 use walkdir::WalkDir;
-use crate::utils::qemu::network::delete_all_taps;
+use crate::utils::qemu::network::delete_own_taps;
 
 const TARGET: &str = "process";
 
@@ -91,10 +91,10 @@ pub fn stop_all_vms(work_dir: &Path) -> anyhow::Result<()> {
 }
 
 #[allow(unused)]
-/// Stops leftover VMs, wipes their disks and deletes their taps
+/// Stops leftover VMs, wipes their disks and deletes the taps of this process
 pub fn stop_and_delete_all_vms(work_dir: &Path) -> anyhow::Result<()> {
     stop_all_vms(work_dir)?;
-    delete_all_taps()?;
+    delete_own_taps()?;
 
     if work_dir.exists() {
         debug!(target: TARGET, "Deleting old VMs in {}", work_dir.display());

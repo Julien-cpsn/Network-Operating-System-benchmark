@@ -34,7 +34,7 @@ use crate::utils::qemu::host_monitor::{host_monitor_task, MonitoredVm, HOST_RESO
 use crate::utils::qemu::numa::place_vms;
 use crate::utils::qemu::image::resolve_images;
 use crate::utils::qemu::ports::reset_port_allocator;
-use crate::utils::qemu::network::{delete_all_taps, link_backend};
+use crate::utils::qemu::network::{delete_orphan_taps, delete_own_taps, link_backend, LinkBackend};
 use crate::utils::qemu::process::{stop_all_vms};
 use crate::utils::qemu::vm::{sanitize_name, QemuVm};
 use crate::utils::log::{find_and_delete_log_files, setup_experiment_logger, EXPERIMENT_LOG_FILE_NAME, find_and_delete_experiment_log_file};
@@ -47,7 +47,8 @@ use crate::utils::os_commands::routing::ospf_config::router_configure_ospf_comma
 use crate::utils::os_commands::routing::rip_config::router_configure_rip_commands;
 use crate::utils::os_commands::routing::static_route::router_configure_static_commands;
 use crate::utils::route::generate_distant_network_from_test;
-use crate::utils::test::{clear_shared_dir, harvest_results, network_test_task, test_task};
+use crate::utils::test::{clear_shared_dir, harvest_results, network_test_task, remove_shared_dir, test_task};
+use crate::utils::experiment_lock::{acquire_experiment_lock, lock_holder, release_experiment_lock};
 use crate::utils::utils::{filter_routers};
 
 pub const INTER_XP_WAIT: u64 = 1;
@@ -59,12 +60,13 @@ pub async fn run(run_command: RunCommand) -> anyhow::Result<()> {
 
     harvest_env_variables();
 
-    if !SHARED_DIR_PATH.exists() {
-        fs::create_dir(&*SHARED_DIR_PATH)?;
-    }
+    // Per instance, see utils::instance
+    fs::create_dir_all(&*SHARED_DIR_PATH)?;
+    fs::create_dir_all(&*RESULT_DIR_PATH)?;
 
-    if !RESULT_DIR_PATH.exists() {
-        fs::create_dir(&*RESULT_DIR_PATH)?;
+    // Taps left on this host by benchmark processes that crashed (the ones of running processes are kept)
+    if link_backend() == LinkBackend::Tap {
+        delete_orphan_taps()?;
     }
 
     let mut experiments = parse_experiments_files(&run_command.experiment_selection)?;
@@ -92,7 +94,8 @@ pub async fn run(run_command: RunCommand) -> anyhow::Result<()> {
             thread::sleep(Duration::from_secs(3));
             warn!(target: "run", "Experiment did not stop by itself, stopping VMs");
             let _ = stop_all_vms(&work_dir(None));
-            let _ = delete_all_taps();
+            let _ = delete_own_taps();
+            release_experiment_lock();
             exit(130);
         });
     }).expect("Error setting Ctrl-C handler");
@@ -103,6 +106,12 @@ pub async fn run(run_command: RunCommand) -> anyhow::Result<()> {
     let nb_runs = run_command.run_command.runs;
 
     'experiment_loop: for (experiment_index, experiment) in experiments.drain(..).enumerate() {
+        // Its results are wiped below: never while another instance is running it
+        if !acquire_experiment_lock(&experiment.experiment_name)? {
+            warn!(target: TARGET, "Skipping experiment {}: it is being run by {}", experiment.experiment_name, lock_holder(&experiment.experiment_name));
+            continue;
+        }
+
         let experiment_path = RESULT_DIR_PATH.join(&experiment.experiment_name);
         if experiment_path.exists() {
            fs::remove_dir_all(&experiment_path)?;
@@ -134,24 +143,37 @@ pub async fn run(run_command: RunCommand) -> anyhow::Result<()> {
                 ) => {
                     if let Err(error) = result {
                         error!(target: TARGET, "{}", error);
+                        // Do not leave VMs running: they would load the host while other instances measure
+                        let _ = stop_all_vms(&work_dir(None));
+                        let _ = delete_own_taps();
+                        release_experiment_lock();
                         exit(1);
                     }
                 },
                  _ = token.cancelled() => {
                     info!(target: TARGET, "Stopping experiment");
                     stop_all_vms(&work_dir(Some(&experiment.experiment_name)))?;
-                    delete_all_taps()?;
+                    delete_own_taps()?;
+                    release_experiment_lock();
                     break 'experiment_loop;
                 }
             }
 
             sleep(Duration::from_secs(INTER_XP_WAIT)).await;
         }
+
+        release_experiment_lock();
     }
 
-    // The taps of the last experiment (their VMs must be stopped first)
+    // The taps of the last experiment (their VMs must be stopped first), and the files of this instance
     if !run_command.run_command.no_stop {
-        delete_all_taps()?;
+        delete_own_taps()?;
+        remove_shared_dir()?;
+
+        let instance_work_dir = work_dir(None);
+        if instance_work_dir.exists() {
+            fs::remove_dir_all(&instance_work_dir)?;
+        }
     }
 
     let experiments_duration = experiments_start.elapsed();
@@ -607,6 +629,7 @@ pub async fn run_experiment(
     info!(target: TARGET, "");
 
     if run_command.run_command.first_only {
+        release_experiment_lock();
         exit(0);
     }
 
