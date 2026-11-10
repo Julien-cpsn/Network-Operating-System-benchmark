@@ -346,11 +346,26 @@ pub fn delete_own_taps() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Deletes the taps left on this host by benchmark processes that no longer exist (crash, kill -9)
+/// Tap of a benchmark version that did not name its taps after its process (`nosb<link, 4 hex>a|b`, `nosbprobe`).
+/// No running instance of this version uses them, so they are always leftovers.
+fn is_legacy_tap(name: &str) -> bool {
+    let Some(rest) = name.strip_prefix(TAP_PREFIX) else {
+        return false;
+    };
+
+    rest == "probe" || (rest.len() == 5 && rest[..4].chars().all(|c| c.is_ascii_hexdigit()) && (rest.ends_with('a') || rest.ends_with('b')))
+}
+
+/// Deletes the taps left on this host by benchmark processes that no longer exist (crash, kill -9),
+/// and by older versions of the benchmark
 pub fn delete_orphan_taps() -> anyhow::Result<()> {
     for name in benchmark_taps() {
-        if let Some(pid) = tap_owner(&name) && !is_process_alive(pid) {
-            debug!(target: TARGET, "Deleting tap {name} left by dead process {pid}");
+        if is_legacy_tap(&name) {
+            warn!(target: TARGET, "Deleting tap {name} left by a previous version of the benchmark");
+            delete_interface(&name)?;
+        }
+        else if let Some(pid) = tap_owner(&name) && !is_process_alive(pid) {
+            warn!(target: TARGET, "Deleting tap {name} left by dead process {pid}");
             delete_interface(&name)?;
         }
     }
@@ -372,5 +387,7 @@ mod tap_name_tests {
         assert_eq!(tap_owner("nosb0000a"), None);
         assert_eq!(tap_owner("nosbprobe"), None);
         assert_eq!(tap_owner("eth0"), None);
+        assert!(is_legacy_tap("nosb0000a") && is_legacy_tap("nosb001fb") && is_legacy_tap("nosbprobe"));
+        assert!(!is_legacy_tap(&name) && !is_legacy_tap("eth0"));
     }
 }
