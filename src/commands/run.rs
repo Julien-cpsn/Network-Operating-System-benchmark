@@ -248,6 +248,7 @@ pub async fn run_experiment(
     find_and_delete_log_files(&experiment_run_path, &experiment.network.nodes)?;
 
     let mut router_images = IndexMap::new();
+    let mut router_cpu_properties = IndexMap::new();
 
     for (router_name, node) in filter_routers(&experiment.network.nodes) {
         let router = node.unwrap_router();
@@ -255,6 +256,7 @@ pub async fn run_experiment(
 
         let operating_system = oses.get(&router.os_name).ok_or_else(|| anyhow!("No operating system found for {}", router.os_name))?;
         router_images.insert(router_name.clone(), resolve_images(&operating_system.images_path)?);
+        router_cpu_properties.insert(router_name.clone(), operating_system.qemu_cpu_properties.clone());
     }
 
     /* SETUP */
@@ -264,7 +266,7 @@ pub async fn run_experiment(
 
     for (node_index, (node_name, node)) in experiment.network.nodes.iter_mut().enumerate() {
         let vm = match &node.node_type {
-            NodeType::Router(_) => QemuVm::new_router(&experiment_dir, node_index, node_name, node, &router_images[node_name]).await?,
+            NodeType::Router(_) => QemuVm::new_router(&experiment_dir, node_index, node_name, node, &router_images[node_name], router_cpu_properties[node_name].as_deref()).await?,
             NodeType::Guest(_) => QemuVm::new_guest(&experiment_dir, node_index, node_name, node, guest_image).await?,
         };
 

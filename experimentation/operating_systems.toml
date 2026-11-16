@@ -274,6 +274,10 @@ EOF""" },
         { expect = "Do you want to see some basic CLI commands before entering the CLI?", send = "n" },
     ]
     input_ready = "* EXOS-VM"
+    # The EXOS-VM boot script determines the "CPU family" from the model name in /proc/cpuinfo. On AMD hosts
+    # (Grid'5000 EPYC) it fails, stops at its developer menu and EXOS does not start. Present an Intel CPU instead
+    # (the host's features are kept, only the vendor string and the model name change).
+    qemu_cpu_properties = "vendor=GenuineIntel,model-id=Intel(R) Xeon(R) CPU"
     #login = "admin"
     #password = ""
     os_family = "COS"

@@ -19,6 +19,10 @@ pub struct OperatingSystem {
     #[serde(default = "gap_between_interfaces")]
     pub gap_between_interfaces: u16,
     pub images_path: Vec<PathBuf>,
+    /// Extra properties appended to QEMU's `-cpu host` (e.g. `vendor=GenuineIntel,model-id=...` for an OS that
+    /// only recognizes some CPU families). None: the host CPU as is.
+    #[serde(default)]
+    pub qemu_cpu_properties: Option<String>,
     pub resources_monitor_commands: Option<Vec<DeserializedOsCommandType>>
 }
 

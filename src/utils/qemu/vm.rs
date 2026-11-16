@@ -183,7 +183,7 @@ impl QemuVm {
     }
 
     /// Router VM: `number_nics` NICs of the router NIC type, IDE disks, host CPU model
-    pub async fn new_router(experiment_dir: &Path, node_index: usize, name: &str, node: &Node, images: &[PathBuf]) -> anyhow::Result<QemuVm> {
+    pub async fn new_router(experiment_dir: &Path, node_index: usize, name: &str, node: &Node, images: &[PathBuf], cpu_properties: Option<&str>) -> anyhow::Result<QemuVm> {
         let router = node.unwrap_router();
 
         let nic_type = router.nics
@@ -199,12 +199,17 @@ impl QemuVm {
         }
 
         // "-cpu host" is only available with KVM
-        let cpu_model = if *QEMU_ENABLE_KVM.get().unwrap() { "host" } else { "max" };
+        let mut cpu_model = String::from(if *QEMU_ENABLE_KVM.get().unwrap() { "host" } else { "max" });
+
+        if let Some(cpu_properties) = cpu_properties.map(str::trim).filter(|properties| !properties.is_empty()) {
+            cpu_model.push(',');
+            cpu_model.push_str(cpu_properties);
+        }
 
         let extra_options = vec![
             //String::from("-mem-prealloc"),
             String::from("-cpu"),
-            String::from(cpu_model),
+            cpu_model,
         ];
 
         Self::new(

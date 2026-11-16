@@ -101,7 +101,7 @@ async fn scenario() {
     let experiment_dir = work_dir.join("Simple_Test_xp");
 
     let client = QemuVm::new_guest(&experiment_dir, 0, "Client", &nodes["Client"], &guest_image).await.unwrap();
-    let router = QemuVm::new_router(&experiment_dir, 1, "Router", &nodes["Router"], &[router_image.clone()]).await.unwrap();
+    let router = QemuVm::new_router(&experiment_dir, 1, "Router", &nodes["Router"], &[router_image.clone()], None).await.unwrap();
     nodes["Client"].vm = Some(client);
     nodes["Router"].vm = Some(router);
 
