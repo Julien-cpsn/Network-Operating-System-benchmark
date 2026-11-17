@@ -1,3 +1,70 @@
+["Click"]
+    # Click Modular Router (user-level driver) on a Debian host. The kernel neither forwards nor owns the addresses:
+    # interfaces are only brought up, offloads disabled (GRO/TSO would hand over-MTU frames to the packet socket) and
+    # addresses/routes are written to /root/click/ifaces and /root/click/routes. At stop, mkclick.awk turns them into the
+    # IP router of the Click paper (fig. 8: ARPResponder/ARPQuerier, Paint, CheckIPHeader, RadixIPLookup, DecIPTTL,
+    # IPFragmenter, ICMP errors) and Click is started in background (log: /root/click/click.log).
+    start = [
+    "sudo -i",
+    "echo 0 > /proc/sys/net/ipv4/ip_forward",
+    "pkill -x click; mkdir -p /root/click && : > /root/click/ifaces && : > /root/click/routes",
+    '''cat << 'EOF' > /root/click/mkclick.awk
+# Builds a Click IP router (Kohler et al. 2000, fig. 8) from /root/click/ifaces ("dev ip len mac") and /root/click/routes ("net/len gw")
+function ip2n(a,  p) { split(a, p, "."); return ((p[1] * 256 + p[2]) * 256 + p[3]) * 256 + p[4] }
+function n2ip(x) { return sprintf("%d.%d.%d.%d", int(x / 16777216) % 256, int(x / 65536) % 256, int(x / 256) % 256, x % 256) }
+function netn(a, l) { return int(ip2n(a) / 2 ^ (32 - l)) * 2 ^ (32 - l) }
+BEGIN { n = 0 }
+FNR == 1 { f++ }
+f == 1 { dev[n] = $1; ip[n] = $2; len[n] = $3; mac[n] = $4; n++; next }
+f == 2 {
+o = -1
+for (i = 0; i < n; i++) if (netn($2, len[i]) == netn(ip[i], len[i])) { o = i; break }
+if (o < 0) { print "no interface for gateway " $2 > "/dev/stderr"; next }
+st = st sprintf(", %s %s %d", $1, $2, o)
+}
+EOF''',
+    '''cat << 'EOF' >> /root/click/mkclick.awk
+END {
+for (i = 0; i < n; i++) r = r sprintf("%s%s/32 %d, %s/%d %d", (i ? ", " : ""), ip[i], n, n2ip(netn(ip[i], len[i])), len[i], i)
+printf "rt :: RadixIPLookup(%s%s);\n", r, st
+printf "rt[%d] -> ICMPPingResponder -> GetIPAddress(16) -> rt;\n", n
+for (i = 0; i < n; i++) {
+    a = ip[i]
+    printf "out%d :: Queue(1000) -> ToDevice(%s);\n", i, dev[i]
+    printf "arpq%d :: ARPQuerier(%s, %s) -> out%d;\n", i, a, mac[i], i
+    printf "c%d :: Classifier(12/0806 20/0001, 12/0806 20/0002, 12/0800, -);\n", i
+    printf "FromDevice(%s, METHOD LINUX) -> c%d;\n", dev[i], i
+    printf "c%d[0] -> ARPResponder(%s %s) -> out%d;\n", i, a, mac[i], i
+    printf "c%d[1] -> [1]arpq%d;\n", i, i
+EOF''',
+    '''cat << 'EOF' >> /root/click/mkclick.awk
+    printf "c%d[2] -> Paint(%d) -> Strip(14) -> CheckIPHeader -> GetIPAddress(16) -> rt;\n", i, i
+    printf "c%d[3] -> Discard;\n", i
+    printf "rt[%d] -> DropBroadcasts -> pt%d :: PaintTee(%d) -> go%d :: IPGWOptions(%s) -> FixIPSrc(%s)", i, i, i, i, a, a
+    printf " -> dt%d :: DecIPTTL -> fr%d :: IPFragmenter(1500) -> [0]arpq%d;\n", i, i, i
+    printf "pt%d[1] -> ICMPError(%s, redirect, host) -> rt;\n", i, a
+    printf "go%d[1] -> ICMPError(%s, parameterproblem) -> rt;\n", i, a
+    printf "dt%d[1] -> ICMPError(%s, timeexceeded) -> rt;\n", i, a
+    printf "fr%d[1] -> ICMPError(%s, unreachable, needfrag) -> rt;\n", i, a
+}
+}
+EOF''',
+    ]
+    add_ip_address = [
+        "ip link set dev {INTERFACE_PREFIX}{INTERFACE} up",
+        "ethtool -K {INTERFACE_PREFIX}{INTERFACE} gro off gso off tso off lro off rx off tx off > /dev/null 2>&1; true",
+        'echo "{INTERFACE_PREFIX}{INTERFACE} {IP_ADDRESS} {NETWORK_LENGTH} $(cat /sys/class/net/{INTERFACE_PREFIX}{INTERFACE}/address)" >> /root/click/ifaces'
+    ]
+    add_static_route = [
+        # The output port is resolved at stop, from the interface whose subnet contains the gateway
+        'echo "{DISTANT_NETWORK} {GATEWAY}" >> /root/click/routes'
+    ]
+    stop = [
+        "awk -f /root/click/mkclick.awk /root/click/ifaces /root/click/routes > /root/click/router.click",
+        "nohup click /root/click/router.click > /root/click/click.log 2>&1 &",
+        "sleep 2; pgrep -x click > /dev/null && echo CLICK_RUNNING || cat /root/click/click.log"
+    ]
+
 ["DNOS10 network stack"]
     start = [
         { expect = "", wait = 20_000 },
@@ -165,6 +232,6 @@
         "configure",
         { expect = "node#", send = "set protocols static route {DISTANT_NETWORK} next-hop {GATEWAY}" },
         { expect = "node#", send = "commit" },
-        { expect = "node#", send = "exit" }
+        { expect = "node#", send = "exit discard" }
     ]
     stop = []
