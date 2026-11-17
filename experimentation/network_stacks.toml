@@ -232,6 +232,6 @@ EOF''',
         "configure",
         { expect = "node#", send = "set protocols static route {DISTANT_NETWORK} next-hop {GATEWAY}" },
         { expect = "node#", send = "commit" },
-        { expect = "node#", send = "exit" }
+        { expect = "node#", send = "exit discard" }
     ]
     stop = []
