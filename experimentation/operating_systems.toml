@@ -80,6 +80,64 @@ EOF""" },
         { expect = "", control = 'c' }
     ]
 
+# Click Modular Router (Kohler et al., ACM TOCS 2000, doi:10.1145/354871.354874), https://github.com/kohler/click
+# Click is not a standalone OS: it runs on a Debian host, in user-level mode (the Linux kernel module no longer builds
+# against recent kernels). The router (forwarding + static routing) is described in a .click configuration file and
+# launched with "click router.click" (FromDevice/ToDevice elements on the ens* interfaces).
+# virt-builder debian-13 \
+#  --root-password password:click \
+#  --upload sources.list:/etc/apt/sources.list \
+#  --install git,build-essential,autoconf,libpcap-dev,sudo \
+#  --run-command 'git clone --depth 1 https://github.com/kohler/click /opt/click' \
+#  --run-command 'cd /opt/click && ./configure --enable-userlevel --disable-linuxmodule && make -j$(nproc) && make install' \
+#  --run-command 'useradd -m -s /bin/bash -G sudo click' \
+#  --run-command 'passwd -d click' \
+#  --write '/etc/sudoers.d/click:click ALL=(ALL) NOPASSWD:ALL' \
+#  --chmod 0440:/etc/sudoers.d/click \
+#  --format qcow2 \
+#  --size 6G \
+#  -o debian-click.qcow2
+[Debian-Click]
+    input_ready = ":~"
+    login = "click"
+    #password = ""
+    os_family = "COS"
+    network_stack = "Click"
+    #routing_stack = ""
+    interface_prefix = "ens"
+    interfaces_start_at = 3
+    images_path = ["/home/julien/Programmation/vm/Click/debian-trixie-click.qcow2"]
+    resources_monitor_commands = [
+        """cat << EOF > resources.sh
+#!/usr/bin/env bash
+set -eu
+
+cpu() { awk '/^cpu /{printf "%.0f %.0f %.0f\\n", \\$2+\\$3+\\$4+\\$7+\\$8, \\$5+\\$6, \\$9; exit}' /proc/stat; }
+
+read -r pb pi ps <<< "\\$(cpu)"
+printf 'Total (MiB)\\tAvailable (MiB)\\tUsed (MiB)\\tCPU (perc)\\tSteal (perc)\\n'
+EOF""",
+    """cat << EOF >> resources.sh
+while :; do
+sleep 1
+read -r b i s <<< "\\$(cpu)"
+awk -v db=\\$((b-pb)) -v di=\\$((i-pi)) -v ds=\\$((s-ps)) '
+    /^MemTotal:/     { mt = \\$2 }
+    /^MemAvailable:/ { ma = \\$2 }
+    END {
+        w = db + di + ds
+        printf "%.1f\\t%.1f\\t%.1f\\t%.1f\\t%.1f\\n", mt/1024, ma/1024, (mt-ma)/1024,
+               (w > 0 ? 100*db/w : 0), (w > 0 ? 100*ds/w : 0)
+    }' /proc/meminfo
+pb=\\$b pi=\\$i ps=\\$s
+done
+EOF""",
+        "chmod +x resources.sh",
+        "./resources.sh",
+        { expect = "", wait = 60_000_000 },
+        { expect = "", control = 'c' }
+    ]
+
 [DANOS]
     input_ready = ":~"
     login = "tmpuser"
