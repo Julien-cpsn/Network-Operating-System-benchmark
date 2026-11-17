@@ -654,6 +654,9 @@ pub async fn run_experiment(
                 vm.stop().await?;
             }
         }
+
+        // Tap names only depend on this process and the link number: the next run creates the same ones
+        delete_own_taps()?;
     }
 
     /* END */
