@@ -267,7 +267,7 @@ async fn wait_for_job(command: &DeployG5kCommand, password: &str, job_id: u64) -
                 info!(target: TARGET, "Job {job_id} state: {state}");
                 let output = ssh_exec(&session, &format!("cat ~/{}", experiment_stdout_file(&command.experiment_name)))?;
                 let lines = output.split('\n').collect::<Vec<&str>>();
-                let max = min(lines.len(), 15);
+                let max = min(lines.len(), 25);
                 println!("========================================\n\n{}", &lines[lines.len() - max..].join("\n"));
             }
             "terminated" => {
