@@ -160,6 +160,7 @@ def main(argv: List[str] = None) -> int:
     correlation_table = tradeoffs.correlations(experiments)
     sensitivity_table = tradeoffs.sensitivity(experiments, all_metrics)
     front.to_csv(tradeoffs_dir / "pareto.csv", index=False)
+    tradeoffs.os_frontiers(front).to_csv(tradeoffs_dir / "pareto_os_frontiers.csv", index=False)
     share.to_csv(tradeoffs_dir / "pareto_share.csv", index=False)
     correlation_table.to_csv(tradeoffs_dir / "correlations.csv", index=False)
     sensitivity_table.to_csv(tradeoffs_dir / "sensitivity.csv", index=False)

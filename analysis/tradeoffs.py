@@ -3,6 +3,9 @@
 - ``pareto.csv`` / ``pareto_share.csv``: in each scenario, the OSes that no other OS beats on
   every objective at once (throughput up, p95 latency down, router cores down). An OS often
   on the front is a candidate "good routing OS" whatever the weights given to the objectives.
+- ``pareto_os_frontiers.csv``: per topology, the frontier of each OS alone (throughput vs p95
+  latency, over every scenario of the topology): the best trade-offs it reaches, drawn as a
+  line in ``pareto.png``. A frontier entirely below-right of another one is a better OS.
 - ``correlations.csv``: Spearman correlation between metrics (over the experiment medians):
   which metrics move together, which are redundant.
 - ``sensitivity.csv``: per OS, how a metric changes from the first to the last level of an
@@ -60,35 +63,92 @@ def pareto_share(front: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame({"scenarios": grouped.size(), "on_front": grouped.sum(), "share_on_front": grouped.mean()}).sort_values("share_on_front", ascending=False).reset_index()
 
 
+def frontier_2d(x: np.ndarray, y: np.ndarray, higher_x: bool = True, higher_y: bool = False) -> np.ndarray:
+    """Indices of the non-dominated points of a 2D cloud, sorted by increasing x."""
+    sx = np.where(higher_x, x, -x)
+    sy = np.where(higher_y, y, -y)
+    order = np.lexsort((-sy, -sx))  # best x first, ties broken by best y
+    kept, best_y = [], -np.inf
+    for i in order:
+        if sy[i] > best_y:
+            kept.append(i)
+            best_y = sy[i]
+    kept = np.asarray(kept, dtype=int)
+    return kept[np.argsort(x[kept])]
+
+
+def os_frontiers(front: pd.DataFrame, objectives: List[str] = None) -> pd.DataFrame:
+    """Per topology and OS, the Pareto frontier of that OS alone on the first two objectives
+    (absolute values): the best trade-offs the OS reaches over all the scenarios of the
+    topology (resources, NIC, routing, ...)."""
+    objectives = [o for o in (objectives or config.PARETO_OBJECTIVES) if o in front.columns]
+    if front.empty or len(objectives) < 2:
+        return pd.DataFrame()
+    x_name, y_name = objectives[0], objectives[1]
+    higher = [config.metric(o).higher_is_better for o in (x_name, y_name)]
+    rows = []
+    for (topology, os_name), points in front.dropna(subset=[x_name, y_name]).groupby(["topology", "os"]):
+        points = points.reset_index(drop=True)
+        for rank, i in enumerate(frontier_2d(points[x_name].to_numpy(float), points[y_name].to_numpy(float), *higher)):
+            row = points.loc[i]
+            rows.append({"topology": topology, "os": os_name, "order": rank, "scenario": row["scenario"], x_name: row[x_name], y_name: row[y_name]})
+    return pd.DataFrame(rows)
+
+
 def plot_pareto(front: pd.DataFrame, output_dir: Path, style: plotting.OsStyle, objectives: List[str] = None) -> Optional[Path]:
+    """Per topology: every experiment (filled = on the Pareto front of its scenario, over all the
+    objectives), and the frontier of each OS (its best trade-offs in this plane, as a staircase)."""
     objectives = [o for o in (objectives or config.PARETO_OBJECTIVES) if o in front.columns]
     if front.empty or len(objectives) < 2:
         return None
+    from matplotlib.lines import Line2D
+
     x_name, y_name = objectives[0], objectives[1]
-    data = front.copy()
-    # Normalised per scenario so that every scenario fits on the same axes: 1 = best
-    data["x"] = data[x_name] / data.groupby("scenario")[x_name].transform("max")
-    data["y"] = data[y_name] / data.groupby("scenario")[y_name].transform("min")
+    higher_x = config.metric(x_name).higher_is_better
+    data = front.rename(columns={x_name: "x", y_name: "y"})
+    frontiers = os_frontiers(front, objectives).rename(columns={x_name: "x", y_name: "y"})
     topologies = sorted(data["topology"].unique())
-    fig, axes = plotting.grid(len(topologies), columns=min(3, len(topologies)), size=(4.6, 3.8))
+    fig, axes = plotting.grid(len(topologies), columns=min(3, len(topologies)), size=(4.8, 4.0))
+    handles = {}
     for ax, topology in zip(axes, topologies):
         subset = data[data["topology"] == topology]
         for os_name in style.order:
             points = subset[subset["os"] == os_name]
             if points.empty:
                 continue
-            color = style.color(os_name)
-            marker = style.marker(os_name)
+            color, marker = style.color(os_name), style.marker(os_name)
             front_points = points[points["on_front"]]
             other = points[~points["on_front"]]
-            ax.scatter(other["x"], other["y"], s=28, facecolors="none", edgecolors=color, marker=marker, linewidths=1)
-            ax.scatter(front_points["x"], front_points["y"], s=36, color=color, marker=marker, edgecolors=plotting.SURFACE, linewidths=1.5, label=os_name)
-        plotting.log_axis(ax)
-        ax.set_xlabel(f"{x_name} / best of the scenario")
-        ax.set_ylabel(f"{y_name} / best of the scenario")
-        ax.set_title(f"{topology} (filled = on the Pareto front)", fontsize=9)
-    axes[0].legend(loc="best")
-    return plotting.save(fig, output_dir / "pareto.png")
+            ax.scatter(other["x"], other["y"], s=26, facecolors="none", edgecolors=color, marker=marker, linewidths=1, alpha=0.55, zorder=2)
+            ax.scatter(front_points["x"], front_points["y"], s=36, color=color, marker=marker, edgecolors=plotting.SURFACE, linewidths=1.5, zorder=4)
+            line = frontiers[(frontiers["topology"] == topology) & (frontiers["os"] == os_name)].sort_values("x")
+            if len(line):
+                # Staircase: between two frontier points, the best y reachable is the next point's
+                ax.step(line["x"], line["y"], where="pre" if higher_x else "post", color=color, linestyle=style.linestyle(os_name), lw=2, zorder=3)
+            handles[os_name] = Line2D([], [], color=color, marker=marker, linestyle=style.linestyle(os_name), lw=2, markeredgecolor=plotting.SURFACE, label=os_name)
+        plotting.log_axis(ax, "x")
+        plotting.log_axis(ax, "y")
+        ax.set_xlabel(config.metric(x_name).label)
+        ax.set_ylabel(config.metric(y_name).label)
+        ax.set_title(topology, fontsize=10)
+    ordered = [handles[o] for o in style.order if o in handles]
+    fig.legend(handles=ordered, loc="lower center", ncol=min(len(ordered), 6), bbox_to_anchor=(0.5, -0.02))
+    fig.suptitle(
+        "Lines: Pareto frontier of each OS (its best trade-offs over the scenarios of the topology).\n"
+        f"Filled: on the Pareto front of its scenario ({', '.join(objectives)}); hollow: dominated.",
+        fontsize=9,
+        color=plotting.INK_SECONDARY,
+    )
+    import warnings
+
+    path = output_dir / "pareto.png"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        fig.tight_layout(rect=(0, 0.05 + 0.03 * ((len(ordered) - 1) // 6), 1, 0.95))
+    fig.savefig(path, dpi=150)
+    plotting.plt.close(fig)
+    return path
 
 
 # --------------------------------------------------------------------------- correlations
