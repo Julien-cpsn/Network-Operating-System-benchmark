@@ -2,7 +2,9 @@ import pandas as pd
 import pytest
 
 from analysis import __main__ as cli
-from analysis import dataset, design, importance, ranking
+import numpy as np
+
+from analysis import dataset, design, importance, ranking, tradeoffs
 
 
 @pytest.fixture(scope="module")
@@ -97,3 +99,21 @@ def test_aliased_factor_is_dropped():
 def test_critical_difference_known_value():
     # Demsar (2006), alpha = 0.05: q = 2.343 for k = 3
     assert ranking.critical_difference(3, 10) == pytest.approx(2.343 * (3 * 4 / 60) ** 0.5, rel=0.01)
+
+
+def test_frontier_2d_keeps_only_non_dominated_points():
+    # Throughput (higher is better) vs latency (lower is better)
+    x = np.array([1.0, 0.8, 0.6, 0.9, 0.5])
+    y = np.array([4.0, 2.0, 1.0, 3.0, 1.5])  # (0.5, 1.5) is dominated by (0.6, 1.0)
+    kept = tradeoffs.frontier_2d(x, y, higher_x=True, higher_y=False)
+    assert list(x[kept]) == [0.6, 0.8, 0.9, 1.0]
+
+
+def test_os_frontiers_file(analysed):
+    frontiers = pd.read_csv(analysed / "tradeoffs" / "pareto_os_frontiers.csv")
+    assert set(frontiers["os"]) == {"Fast", "Scaling", "Slow"}
+    for _, line in frontiers.groupby(["topology", "os"]):
+        line = line.sort_values("tcp_total_mbps")
+        # Along a frontier, more throughput can only cost more latency
+        assert line["icmp_latency_p95_ms"].is_monotonic_increasing
+    assert frontiers.groupby(["topology", "os"]).size().max() > 1
